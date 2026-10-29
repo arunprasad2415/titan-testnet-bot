@@ -114,6 +114,7 @@ class TitanClient:
         h = dict(BASE_HEADERS)
         h.update({"X-Session-Id": self.session_id, "X-Request-Ts": ts,
                   "X-Request-Nonce": nonce, "X-Request-Sig": self._sign(canonical)})
+        self.last_canonical = canonical
         return h
 
     def _action_headers(self, canonical):
@@ -128,6 +129,10 @@ class TitanClient:
         hdrs = headers or self._request_headers(method, path, query, data or b"")
         if data:
             hdrs["content-type"] = "application/json"
+        if os.environ.get("TITAN_DEBUG"):
+            print(f"--- {method} {path} ---")
+            print("canonical:\n" + getattr(self, "last_canonical", "(action-signed)"))
+            print("headers:", {k: v for k, v in hdrs.items() if k.lower().startswith("x-")})
         req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as r:
