@@ -77,6 +77,11 @@ class Smart:
         self.cur_size = a.size
         self.cur_tif = "ioc"
         self.client = client if client is not None else (None if a.dry_run else TitanClient(a.session))
+        self.specs = {}
+        if self.client:
+            st, res = self.client.markets()
+            if st == 200:
+                self.specs = {m["market"]: m for m in res.get("markets", [])}
         self.samples = []
         self.realized = 0.0
         self.cycles = 0
@@ -95,7 +100,15 @@ class Smart:
 
     # ---------- signal ----------
     def sample(self):
-        self.samples.append((time.time(), self.price()))
+        px = self.price()
+        if px <= 0:
+            return
+        if self.samples:
+            prev = self.samples[-1][1]
+            if prev > 0 and abs(px / prev - 1) > 0.05:   # >5% between samples = bad tick
+                self.samples.clear()
+                return
+        self.samples.append((time.time(), px))
         cutoff = time.time() - 20
         self.samples = [s for s in self.samples if s[0] >= cutoff]
 
@@ -103,7 +116,10 @@ class Smart:
         if len(self.samples) < 8:
             return 0.0
         a, b = self.samples[0][1], self.samples[-1][1]
-        return (b - a) / a
+        if a <= 0:
+            return 0.0
+        m = (b - a) / a
+        return m if abs(m) < 0.02 else 0.0      # >2% in 20s is noise, not a signal
 
     def wait_signal(self, max_wait=300):
         base_gate = getattr(self.a, "momentum", 0.01)
@@ -135,7 +151,22 @@ class Smart:
             self.side = side
             print(f"  DRY open {side} {self.a.size} @ {px} (entry {self.entry:.2f})")
             return True
-        size = self.cur_size
+        spec = self.specs.get(self.cur_market, {})
+        dec = int(spec.get("szDecimals", 5))
+        min_notional = float(spec.get("minNotional", 10))
+        mark = self.price()
+        if getattr(self.a, "size_usd", 0):
+            size = round(self.a.size_usd / mark, dec)      # notional-based: same $ per market
+        else:
+            size = round(self.cur_size, dec)
+        if size * mark < min_notional:
+            size = round(min_notional / mark, dec)
+            if size * mark < min_notional:                  # rounding down left it short
+                size = round((min_notional / mark) * 1.01, dec)
+            print(f"  size raised to the {min_notional} min notional -> {size}")
+        if size <= 0:
+            print(f"  size rounds to zero at {dec} decimals, skipping")
+            return False
         self.last_size = size
         st, res = self.client.order(self.cur_market, side, size, px,
                                     tif=self.cur_tif, reduce_only=False)
@@ -169,6 +200,23 @@ class Smart:
             self.side = None
         return st in (200, 201)
 
+    def flatten(self):
+        """Leave no dust behind: any residual size is closed before a new entry."""
+        if not self.client:
+            return
+        st, pos = self.client.positions()
+        if st != 200:
+            return
+        for p in pos.get("items", []):
+            sz = float(p.get("size", 0))
+            if abs(sz) < 1e-9:
+                continue
+            side = "sell" if sz > 0 else "buy"
+            px = price5(self.price() * (0.999 if side == "sell" else 1.001))
+            market = p.get("market", self.cur_market)
+            st2, res = self.client.order(market, side, abs(sz), px, tif="ioc", reduce_only=True)
+            print(f"  flatten {market} {sz:+.6f} -> {st2} {json.dumps(res)[:120]}")
+
     def roe(self):
         if not self.entry or not self.side:
             return 0.0
@@ -186,6 +234,7 @@ class Smart:
                 break
             self.cycles += 1
             print(f"cycle {self.cycles}: waiting for momentum")
+            self.flatten()
             if getattr(self.a, "stealth", False):
                 self.a.momentum = max(0.002, random.gauss(self.a.momentum, self.a.momentum * 0.3))
             mom = self.wait_signal()
@@ -227,6 +276,7 @@ class Smart:
                 time.sleep(1)
             final = self.roe()
             self.realized += final
+            self.flatten()
             print(f"\n  closed by {closed}, roe {final:+.2f}%, total {self.realized:+.2f}%")
             self.close_pos(closed)
 

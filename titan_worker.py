@@ -18,6 +18,7 @@ class NS:
     def __init__(self, d, session):
         self.market = d.get("market", "BTC-USDCX")
         self.size = float(d.get("size", 0.002))
+        self.size_usd = float(d.get("size_usd", 0))
         self.leverage = int(d.get("leverage", 5))
         self.tp = float(d.get("tp", 1.2))
         self.sl = float(d.get("sl", 0.9))
