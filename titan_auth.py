@@ -78,7 +78,8 @@ def main():
     sk = SigningKey.generate()
     pub_hex = sk.verify_key.encode().hex()
     expiry = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=a.ttl_days)
-    user_nonce = int(time.time() * 1000)
+    # the app uses Date.now()*1e6 (microsecond scale); a smaller value can replay
+    user_nonce = int(time.time() * 1000) * 1_000_000
 
     canonical = "\n".join([
         "Daml-Perp-Session-Auth v=2",

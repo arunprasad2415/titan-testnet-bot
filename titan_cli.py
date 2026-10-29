@@ -62,39 +62,57 @@ def ask(prompt, default, cast=float):
 
 
 def mint_session(private_key):
-    """Same flow as titan_auth.py, but in-process and returns the client."""
+    """Same flow as titan_auth.py, but in-process and returns the client.
+
+    The venue tracks the last userNonce per credential and rejects anything at or
+    below it, so a replay answer means bump the nonce and sign again.
+    """
     acct = Account.from_key(private_key)
     sk = SigningKey.generate()
     pub_hex = sk.verify_key.encode().hex()
     expiry = titan_auth.datetime.datetime.now(
         titan_auth.datetime.timezone.utc) + titan_auth.datetime.timedelta(days=7)
-    canonical = "\n".join([
-        "Daml-Perp-Session-Auth v=2",
-        titan_auth.line("scheme", "evm"),
-        titan_auth.line("credential", acct.address),
-        titan_auth.line("sessionPubKey", pub_hex),
-        titan_auth.line("expiry", titan_auth.iso(expiry)),
-        titan_auth.line("maxNotional", titan_auth.dec10(100000)),
-        titan_auth.line("userNonce", int(time.time() * 1000)),
-        titan_auth.line("label", ""),
-        titan_auth.line("scope", "full"),
-    ])
-    sig = acct.sign_message(encode_defunct(text=canonical)).signature.hex()
-    body = {"scheme": "evm", "message": canonical, "signature": sig}
-    req = urllib.request.Request(
-        BASE + "/v1/auth/session", data=json.dumps(body).encode(), method="POST",
-        headers={"content-type": "application/json", "accept": "application/json",
-                 "user-agent": UA, "sec-ch-ua": '"Chromium";v="156", "Not:A-Brand";v="8"',
-                 "sec-ch-ua-platform": '"Windows"',
-                 "referer": "https://testnet.titanx.cc/"})
-    try:
-        with urllib.request.urlopen(req, timeout=25) as r:
-            data = json.load(r)
-    except urllib.error.HTTPError as e:
-        detail = e.read()[:200].decode("utf-8", "ignore")
-        if "rate_limited" in detail:
-            print("  the venue rate limits session minting per address, wait a minute and retry")
-        print("  auth failed:", e.code, detail)
+    base_nonce = int(time.time() * 1000) * 1_000_000
+
+    last = None
+    for attempt in range(4):
+        user_nonce = base_nonce + attempt * 1_000_000_000
+        canonical = "\n".join([
+            "Daml-Perp-Session-Auth v=2",
+            titan_auth.line("scheme", "evm"),
+            titan_auth.line("credential", acct.address),
+            titan_auth.line("sessionPubKey", pub_hex),
+            titan_auth.line("expiry", titan_auth.iso(expiry)),
+            titan_auth.line("maxNotional", titan_auth.dec10(100000)),
+            titan_auth.line("userNonce", user_nonce),
+            titan_auth.line("label", ""),
+            titan_auth.line("scope", "full"),
+        ])
+        sig = acct.sign_message(encode_defunct(text=canonical)).signature.hex()
+        body = {"scheme": "evm", "message": canonical, "signature": sig}
+        req = urllib.request.Request(
+            BASE + "/v1/auth/session", data=json.dumps(body).encode(), method="POST",
+            headers={"content-type": "application/json", "accept": "application/json",
+                     "user-agent": UA, "sec-ch-ua": '"Chromium";v="156", "Not:A-Brand";v="8"',
+                     "sec-ch-ua-platform": '"Windows"',
+                     "referer": "https://testnet.titanx.cc/"})
+        try:
+            with urllib.request.urlopen(req, timeout=25) as r:
+                data = json.load(r)
+            break
+        except urllib.error.HTTPError as e:
+            detail = e.read()[:200].decode("utf-8", "ignore")
+            last = detail
+            if "nonce_replay" in detail:
+                print(f"      nonce already used, retry {attempt + 1}")
+                time.sleep(1)
+                continue
+            if "rate_limited" in detail:
+                print("  the venue rate limits session minting per address, wait a minute and retry")
+            print("  auth failed:", e.code, detail)
+            sys.exit(1)
+    else:
+        print("  auth failed after retries:", last)
         sys.exit(1)
 
     json.dump({
