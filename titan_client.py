@@ -96,14 +96,14 @@ def price5(value):
 
 
 class TitanClient:
-    def __init__(self, session_path, base=BASE, timeout=20, proxy=None):
+    def __init__(self, session_path, base=BASE, timeout=20, proxy=None, impersonate="chrome"):
         self.base = base
         self.timeout = timeout
         self.proxy = proxy
         self.http = None
         self.http_kind = None
         if _cffi is not None:
-            self.http = _cffi.Session(impersonate="chrome")
+            self.http = _cffi.Session(impersonate=impersonate)
             if proxy:
                 self.http.proxies = {"http": proxy, "https": proxy}
             self.http_kind = "curl_cffi"

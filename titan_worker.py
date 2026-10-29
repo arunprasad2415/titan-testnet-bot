@@ -11,6 +11,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from titan_client import TitanClient      # noqa: E402
 from titan_smart import Smart             # noqa: E402
+from titan_behavior import Profile        # noqa: E402
 
 
 class NS:
@@ -29,6 +30,7 @@ class NS:
         self.stealth = bool(d.get("stealth", True))
         self.session = session
         self.dry_run = bool(d.get("dry_run", False))
+        self.name = d.get("name", "default")
 
 
 def main():
@@ -40,7 +42,11 @@ def main():
     d = json.loads(a.config)
     ns = NS(d, a.session)
     proxy = d.get("proxy") or None
-    client = None if ns.dry_run else TitanClient(a.session, proxy=proxy)
+    prof = Profile(ns.name, index=int(d.get("index", 0)))
+    print(f"profile {ns.name}: {prof.impersonate}, size x{prof.size_mult:.2f}, "
+          f"pace x{prof.pace_mult:.2f}, markets {prof.market_pool}", flush=True)
+    client = None if ns.dry_run else TitanClient(a.session, proxy=proxy,
+                                                 impersonate=prof.impersonate)
 
     if client:
         ready, info = client.account_ready()

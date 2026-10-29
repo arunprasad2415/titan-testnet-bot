@@ -127,7 +127,8 @@ def main():
             path = ensure_session(acc)
             if not path:
                 continue
-        cfg = {k: v for k, v in acc.items() if k not in ("name", "privateKey")}
+        cfg = {k: v for k, v in acc.items() if k not in ("privateKey",)}
+        cfg["index"] = accounts.index(acc)
         cmd = [sys.executable, os.path.join(HERE, "titan_worker.py"),
                "--session", path, "--config", json.dumps(cfg)]
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

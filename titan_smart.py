@@ -23,6 +23,7 @@ import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from titan_client import TitanClient, price5  # noqa: E402
+from titan_behavior import Profile            # noqa: E402
 
 KILL = "/root/titan/KILL"
 
@@ -71,6 +72,10 @@ def tick(price):
 class Smart:
     def __init__(self, a, client=None):
         self.a = a
+        self.prof = Profile(getattr(a, "name", "default")) if getattr(a, "stealth", False) else None
+        self.cur_market = a.market
+        self.cur_size = a.size
+        self.cur_tif = "ioc"
         self.client = client if client is not None else (None if a.dry_run else TitanClient(a.session))
         self.samples = []
         self.realized = 0.0
@@ -83,7 +88,7 @@ class Smart:
         """Venue mark first: an external spot feed can be cached and read as zero
         movement, which makes the momentum gate never fire."""
         if self.client:
-            st, res = self.client.mark(self.a.market)
+            st, res = self.client.mark(self.cur_market)
             if st == 200 and res.get("markPrice"):
                 return float(res["markPrice"])
         return spot(self.a.market)
@@ -101,7 +106,8 @@ class Smart:
         return (b - a) / a
 
     def wait_signal(self, max_wait=300):
-        gate = getattr(self.a, "momentum", 0.01) / 100.0   # percent -> fraction
+        base_gate = getattr(self.a, "momentum", 0.01)
+        gate = (self.prof.gate(base_gate) if self.prof else base_gate) / 100.0
         t0 = time.time()
         last_note = 0.0
         while time.time() - t0 < max_wait:
@@ -120,20 +126,19 @@ class Smart:
     # ---------- orders ----------
     def open_side(self, side):
         slip = self.a.slip
-        if getattr(self.a, "stealth", False):
-            slip = random.uniform(self.a.slip * 0.6, self.a.slip * 2.2)
+        if self.prof:
+            slip = self.prof.slip(self.a.slip)
+            self.prof.pre_entry_jitter()
         px = price5(self.price() * (1 + slip if side == "buy" else 1 - slip))
         if self.a.dry_run:
             self.entry = self.price()
             self.side = side
             print(f"  DRY open {side} {self.a.size} @ {px} (entry {self.entry:.2f})")
             return True
-        size = self.a.size
-        if getattr(self.a, "stealth", False):
-            size = rsize(self.a.size)
+        size = self.cur_size
         self.last_size = size
-        st, res = self.client.order(self.a.market, side, size, px,
-                                    tif="ioc", reduce_only=False)
+        st, res = self.client.order(self.cur_market, side, size, px,
+                                    tif=self.cur_tif, reduce_only=False)
         print(f"  order {side} -> {st} {json.dumps(res)[:200]}")
         if st not in (200, 201):
             return False
@@ -148,7 +153,16 @@ class Smart:
             print(f"  DRY close {side} {self.a.size} @ {px} ({reason})")
             self.side = None
             return True
-        st, res = self.client.order(self.a.market, side, getattr(self, "last_size", self.a.size), px,
+        size = getattr(self, "last_size", self.cur_size)
+        if self.prof and self.prof.close_in_pieces() and size > 0.0002:
+            half = round(size / 2, 6)
+            st, res = self.client.order(self.cur_market, side, half, px, tif="ioc", reduce_only=True)
+            if st not in (200, 201):
+                return False
+            time.sleep(random.uniform(1.0, 4.0))
+            px = price5(self.price() * (1 - 0.0003 if side == "sell" else 1 + 0.0003))
+            size = round(size - half, 6)
+        st, res = self.client.order(self.cur_market, side, size, px,
                                     tif="ioc", reduce_only=True)
         print(f"  close {side} -> {st} {json.dumps(res)[:200]} ({reason})")
         if st in (200, 201):
@@ -179,7 +193,16 @@ class Smart:
                 print("  no signal in window, skipping")
                 continue
             side = "buy" if mom > 0 else "sell"
-            print(f"  signal {side} momentum {mom*100:.3f}%")
+            if self.prof:
+                self.cur_market = self.prof.market(self.a.market)
+                self.cur_size = self.prof.size(self.a.size)
+                self.cur_tif = self.prof.tif()
+                if self.prof.skip():
+                    print(f"  signal {side} but passing this one (profile skip)")
+                    time.sleep(self.prof.pause(self.a.pause))
+                    continue
+            print(f"  signal {side} momentum {mom*100:.3f}% "
+                  f"{self.cur_market} size {self.cur_size} {self.cur_tif}")
             if not self.open_side(side):
                 print("  entry failed, stop")
                 break
@@ -198,7 +221,8 @@ class Smart:
                 if r <= -a.sl:
                     closed = "SL"
                     break
-                if time.time() - t0 >= a.timeout:
+                hold = self.prof.hold(a.timeout) if self.prof else a.timeout
+                if time.time() - t0 >= hold:
                     break
                 time.sleep(1)
             final = self.roe()
@@ -209,12 +233,8 @@ class Smart:
             if self.realized <= -a.max_dd:
                 print(f"  drawdown guard hit ({self.realized:.2f}% <= -{a.max_dd}%), stopping")
                 break
-            if getattr(a, "stealth", False):
-                pause = jitter(a.pause, 0.6)
-                if self.cycles % random.randint(4, 9) == 0:
-                    pause = random.uniform(25, 90)      # occasional long break
-                    print(f"  idle {pause:.0f}s (human pause)")
-                time.sleep(pause)
+            if self.prof:
+                time.sleep(self.prof.pause(a.pause))
             else:
                 time.sleep(a.pause)
 

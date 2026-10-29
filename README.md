@@ -130,3 +130,29 @@ Transport is `curl_cffi` with Chrome impersonation, so the TLS fingerprint match
 a browser instead of Python's; plain `requests` gets a Cloudflare 403 on this API,
 which is why the transport changed. Without `curl_cffi` it falls back to `requests`,
 then to `urllib` (no proxy in that last case).
+
+
+## Behaviour randomisation (no fixed pattern)
+
+`stealth: true` gives each account a personality derived from its name, then draws
+every decision inside a cycle from that personality:
+
+```
+tls          curl_cffi impersonation per account (chrome, chrome124, safari, edge)
+size         base x personality multiplier x per-cycle noise
+gate         momentum threshold re-rolled each cycle, +/-50%
+tif          maker or taker chosen per cycle from a per-account bias
+market       each account keeps a preferred pool, re-picked every cycle
+hold         TP/SL timeout scaled per cycle
+skip         sometimes the signal is passed on entirely
+closing      occasionally closes in two pieces seconds apart
+pause        gaussian between cycles, plus a 20-120s idle now and then
+jitter       0.3-3.5s hesitation before every entry
+```
+
+Two accounts started from the same config diverge immediately:
+
+```
+[alice] profile alice: safari17_0, size x0.87, pace x1.42, markets ['ETH-USDCX']
+[bob]   profile bob:   chrome124,   size x1.57, pace x0.96, markets ['BTC-USDCX']
+```
