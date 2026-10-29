@@ -23,9 +23,9 @@ from titan_client import TitanClient, price5  # noqa: E402
 
 KILL = "/root/titan/KILL"
 FEEDS = {
-    "BTC-USDCX": ("coinbase", "BTC-USD"),
-    "ETH-USDCX": ("coinbase", "ETH-USD"),
-    "SOL-USDCX": ("coinbase", "SOL-USD"),
+    "BTC-USDCX": ("kraken", "XBTUSD"),
+    "ETH-USDCX": ("kraken", "ETHUSD"),
+    "SOL-USDCX": ("kraken", "SOLUSD"),
     "CC-USDCX": ("kraken", "CCUSD"),
 }
 
@@ -43,7 +43,11 @@ def _kraken(pair):
         return float(next(iter(d.values()))["c"][0])
 
 
-def mark_price(market):
+def mark_price(market, client=None):
+    if client is not None:
+        st, res = client.mark(market)
+        if st == 200 and res.get("markPrice"):
+            return float(res["markPrice"])
     src = FEEDS.get(market)
     if not src:
         raise SystemExit(f"no price feed for {market}")
@@ -95,11 +99,11 @@ def main():
             break
 
         try:
-            px = mark_price(args.market)
+            px = mark_price(args.market, client)
         except Exception as e:
             print(f"cycle {i}: price feed failed ({e}), retrying once")
             time.sleep(3)
-            px = mark_price(args.market)
+            px = mark_price(args.market, client)
 
         buy_px = price5(px * (1 + args.slip))
         sell_px = price5(px * (1 - args.slip))

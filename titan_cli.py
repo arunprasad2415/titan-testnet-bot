@@ -227,6 +227,7 @@ def wizard(a, client, address):
     timeout = ask("timeout, seconds", 90, int)
     dd = ask("max drawdown, % of realised", 15.0)
     cycles = ask("cycles", 10, int)
+    momentum = ask("momentum gate, % move in 20s", 0.01)
     mode = readline("  mode smart/hedge [smart]: ").strip().lower() or "smart"
     if mode not in ("smart", "hedge"):
         print("    unknown mode, using smart")
@@ -246,6 +247,7 @@ def wizard(a, client, address):
   timeout     {timeout}s
   max DD      {dd}%
   cycles      {cycles}
+  momentum    {momentum}% in 20s
   mode        {mode}
   dry run     {a.dry_run}
 """)
@@ -264,7 +266,8 @@ def wizard(a, client, address):
 
     ns = argparse.Namespace(market="BTC-USDCX", size=size, leverage=lev, tp=tp, sl=sl,
                             timeout=timeout, max_dd=dd, cycles=cycles, pause=3.0,
-                            slip=0.0004, session=SESSION, dry_run=a.dry_run)
+                            slip=0.0004, session=SESSION, dry_run=a.dry_run,
+                            momentum=momentum)
     if mode == "hedge":
         import titan_hedge
         sys.argv = ["titan_hedge.py", "--market", "BTC-USDCX", "--size", str(size),

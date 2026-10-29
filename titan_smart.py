@@ -27,9 +27,9 @@ KILL = "/root/titan/KILL"
 TAKER_BPS = 4.5
 MAKER_BPS = 1.5
 FEEDS = {
-    "BTC-USDCX": ("coinbase", "BTC-USD"),
-    "ETH-USDCX": ("coinbase", "ETH-USD"),
-    "SOL-USDCX": ("coinbase", "SOL-USD"),
+    "BTC-USDCX": ("kraken", "XBTUSD"),
+    "ETH-USDCX": ("kraken", "ETHUSD"),
+    "SOL-USDCX": ("kraken", "SOLUSD"),
     "CC-USDCX": ("kraken", "CCUSD"),
 }
 
@@ -67,9 +67,19 @@ class Smart:
         self.side = None
         self.entry = 0.0
 
+    # ---------- price ----------
+    def price(self):
+        """Venue mark first: an external spot feed can be cached and read as zero
+        movement, which makes the momentum gate never fire."""
+        if self.client:
+            st, res = self.client.mark(self.a.market)
+            if st == 200 and res.get("markPrice"):
+                return float(res["markPrice"])
+        return spot(self.a.market)
+
     # ---------- signal ----------
     def sample(self):
-        self.samples.append((time.time(), spot(self.a.market)))
+        self.samples.append((time.time(), self.price()))
         cutoff = time.time() - 20
         self.samples = [s for s in self.samples if s[0] >= cutoff]
 
@@ -80,22 +90,27 @@ class Smart:
         return (b - a) / a
 
     def wait_signal(self, max_wait=300):
+        gate = getattr(self.a, "momentum", 0.01) / 100.0   # percent -> fraction
         t0 = time.time()
+        last_note = 0.0
         while time.time() - t0 < max_wait:
             if os.path.exists(KILL):
                 return None
             self.sample()
             m = self.momentum()
-            if abs(m) >= 0.0002:
+            if abs(m) >= gate:
                 return m
+            if time.time() - last_note > 5:
+                last_note = time.time()
+                print(f"    waiting: move {m*100:+.4f}% over 20s, gate {gate*100:.3f}%", flush=True)
             time.sleep(1)
         return None            # no random fallback: no signal means no trade
 
     # ---------- orders ----------
     def open_side(self, side):
-        px = price5(spot(self.a.market) * (1 + self.a.slip if side == "buy" else 1 - self.a.slip))
+        px = price5(self.price() * (1 + self.a.slip if side == "buy" else 1 - self.a.slip))
         if self.a.dry_run:
-            self.entry = spot(self.a.market)
+            self.entry = self.price()
             self.side = side
             print(f"  DRY open {side} {self.a.size} @ {px} (entry {self.entry:.2f})")
             return True
@@ -104,13 +119,13 @@ class Smart:
         print(f"  order {side} -> {st} {json.dumps(res)[:200]}")
         if st not in (200, 201):
             return False
-        self.entry = spot(self.a.market)
+        self.entry = self.price()
         self.side = side
         return True
 
     def close_pos(self, reason):
         side = "sell" if self.side == "buy" else "buy"
-        px = price5(spot(self.a.market) * (1 - self.a.slip if side == "sell" else 1 + self.a.slip))
+        px = price5(self.price() * (1 - self.a.slip if side == "sell" else 1 + self.a.slip))
         if self.a.dry_run:
             print(f"  DRY close {side} {self.a.size} @ {px} ({reason})")
             self.side = None
@@ -125,7 +140,7 @@ class Smart:
     def roe(self):
         if not self.entry or not self.side:
             return 0.0
-        move = (spot(self.a.market) - self.entry) / self.entry
+        move = (self.price() - self.entry) / self.entry
         return move * self.a.leverage * 100 * (1 if self.side == "buy" else -1)
 
     # ---------- loop ----------
@@ -195,6 +210,8 @@ def main():
     ap.add_argument("--cycles", type=int, default=10)
     ap.add_argument("--pause", type=float, default=3.0)
     ap.add_argument("--slip", type=float, default=0.0004)
+    ap.add_argument("--momentum", type=float, default=0.01,
+                    help="momentum gate in percent over a 20s window")
     ap.add_argument("--session", default="/root/titan/session.json")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--allow-thin-tp", action="store_true")

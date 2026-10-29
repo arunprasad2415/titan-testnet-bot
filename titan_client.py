@@ -175,6 +175,10 @@ class TitanClient:
     def market(self, symbol):
         return self._call("GET", f"/v1/markets/{symbol}")
 
+    def mark(self, symbol):
+        """Live mark/bid/ask straight from the venue."""
+        return self._call("GET", f"/v1/markets/{symbol}/mark")
+
     # ---------- account ----------
     def me(self):
         return self._call("GET", "/v1/me")
