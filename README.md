@@ -87,3 +87,46 @@ titan_hedge.py    net-flat paired long/short volume farm for points
   predicting direction.
 
 Both stop on a `KILL` file in this directory and both honour `--max-notional`.
+
+
+## Multiple accounts at once
+
+```bash
+python3 titan_multi.py --init                    # writes accounts.example.json
+# fill in a privateKey per account (and optional proxy), then:
+python3 titan_multi.py --config accounts.json
+python3 titan_multi.py --config accounts.json --dry-run
+python3 titan_multi.py --config accounts.json --only alice
+```
+
+Config:
+
+```json
+{
+  "defaults": {"market": "BTC-USDCX", "size": 0.002, "leverage": 5, "tp": 1.2,
+               "sl": 0.9, "timeout": 90, "max_dd": 15, "cycles": 0,
+               "stealth": true, "momentum": 0.01},
+  "accounts": [
+    {"name": "alice", "privateKey": "0x...", "proxy": "http://user:pass@host:port"},
+    {"name": "bob",   "privateKey": "0x...", "size": 0.001, "momentum": 0.02}
+  ]
+}
+```
+
+Behaviour:
+
+- each account gets `sessions/<name>.json` (mode 600), re-minted automatically
+  when it has under a day left
+- every account runs in its own process, so one crash does not take the rest down
+- starts are staggered 0.4 s apart, they should not look synchronised
+- logs are prefixed `[name]`
+- `cycles: 0` means run until stopped
+- ctrl-c, or `touch KILL`, stops every worker
+
+## Proxy support
+
+`proxy` accepts `http://`, `https://` or `socks5://` (with optional `user:pass@`).
+Transport is `curl_cffi` with Chrome impersonation, so the TLS fingerprint matches
+a browser instead of Python's; plain `requests` gets a Cloudflare 403 on this API,
+which is why the transport changed. Without `curl_cffi` it falls back to `requests`,
+then to `urllib` (no proxy in that last case).

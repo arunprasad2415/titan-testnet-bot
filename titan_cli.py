@@ -61,7 +61,7 @@ def ask(prompt, default, cast=float):
         return default
 
 
-def mint_session(private_key):
+def mint_session(private_key, session_path=SESSION, proxy=None):
     """Same flow as titan_auth.py, but in-process and returns the client.
 
     The venue tracks the last userNonce per credential and rejects anything at or
@@ -122,9 +122,9 @@ def mint_session(private_key):
         "expiresAtMs": int(titan_auth.datetime.datetime.fromisoformat(
             data["expiresAt"].replace("Z", "+00:00")).timestamp() * 1000),
         "address": acct.address,
-    }, open(SESSION, "w"), indent=1)
-    os.chmod(SESSION, 0o600)
-    return TitanClient(SESSION), acct.address, data
+    }, open(session_path, "w"), indent=1)
+    os.chmod(session_path, 0o600)
+    return TitanClient(session_path, proxy=proxy), acct.address, data
 
 
 def main():

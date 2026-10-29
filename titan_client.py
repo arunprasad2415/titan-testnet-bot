@@ -20,6 +20,15 @@ import urllib.error
 import urllib.request
 import uuid
 
+try:
+    from curl_cffi import requests as _cffi      # Chrome TLS fingerprint, proxy aware
+except ImportError:
+    _cffi = None
+try:
+    import requests as _plain
+except ImportError:
+    _plain = None
+
 from nacl.signing import SigningKey
 
 BASE = "https://testnet-api.titanx.cc"
@@ -87,9 +96,23 @@ def price5(value):
 
 
 class TitanClient:
-    def __init__(self, session_path, base=BASE, timeout=20):
+    def __init__(self, session_path, base=BASE, timeout=20, proxy=None):
         self.base = base
         self.timeout = timeout
+        self.proxy = proxy
+        self.http = None
+        self.http_kind = None
+        if _cffi is not None:
+            self.http = _cffi.Session(impersonate="chrome")
+            if proxy:
+                self.http.proxies = {"http": proxy, "https": proxy}
+            self.http_kind = "curl_cffi"
+        elif _plain is not None:
+            self.http = _plain.Session()
+            self.http.trust_env = False
+            if proxy:
+                self.http.proxies = {"http": proxy, "https": proxy}
+            self.http_kind = "requests"
         s = json.load(open(session_path))
         self.session_id = s["sessionId"]
         seed = bytes.fromhex(s["privateKey"])
@@ -156,6 +179,14 @@ class TitanClient:
             print(f"--- {method} {path} ---")
             print("canonical:\n" + getattr(self, "last_canonical", "(action-signed)"))
             print("headers:", {k: v for k, v in hdrs.items() if k.lower().startswith("x-")})
+        if self.http is not None:
+            try:
+                r = self.http.request(method, url, data=data, headers=hdrs,
+                                      timeout=self.timeout)
+                return r.status_code, (r.json() if r.content else {})
+            except Exception as e:
+                return 0, {"error": {"code": "transport", "message": str(e)[:200]}}
+
         req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
         try:
             with urllib.request.urlopen(req, timeout=self.timeout) as r:

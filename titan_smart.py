@@ -69,9 +69,9 @@ def tick(price):
 
 
 class Smart:
-    def __init__(self, a):
+    def __init__(self, a, client=None):
         self.a = a
-        self.client = None if a.dry_run else TitanClient(a.session)
+        self.client = client if client is not None else (None if a.dry_run else TitanClient(a.session))
         self.samples = []
         self.realized = 0.0
         self.cycles = 0
