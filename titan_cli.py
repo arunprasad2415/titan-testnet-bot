@@ -41,8 +41,17 @@ BANNER = """
 """
 
 
+def readline(prompt):
+    """input() that returns "" on EOF instead of raising, so a closed stdin exits cleanly."""
+    try:
+        return input(prompt)
+    except EOFError:
+        print()
+        return ""
+
+
 def ask(prompt, default, cast=float):
-    raw = input(f"  {prompt} [{default}]: ").strip()
+    raw = readline(f"  {prompt} [{default}]: ").strip()
     if not raw:
         return default
     try:
@@ -183,7 +192,10 @@ def main():
     timeout = ask("timeout, seconds", 90, int)
     dd = ask("max drawdown, % of realised", 15.0)
     cycles = ask("cycles", 10, int)
-    mode = input("  mode smart/hedge [smart]: ").strip().lower() or "smart"
+    mode = readline("  mode smart/hedge [smart]: ").strip().lower() or "smart"
+    if mode not in ("smart", "hedge"):
+        print("    unknown mode, using smart")
+        mode = "smart"
 
     floor = 0.09 * lev
     if mode == "smart" and tp < floor:
@@ -202,7 +214,7 @@ def main():
   mode        {mode}
   dry run     {a.dry_run}
 """)
-    if input("  start trading? [y/N]: ").strip().lower() != "y":
+    if readline("  start trading? [y/N]: ").strip().lower() != "y":
         print("  aborted")
         return
 
