@@ -165,6 +165,18 @@ class TitanClient:
     def fills(self, limit=50):
         return self._call("GET", "/v1/me/fills", f"limit={limit}")
 
+    def account_ready(self):
+        """The account exists when balance answers 200. /v1/me is unreliable
+        (answers bad_body on some accounts), so do not gate on it."""
+        st, bal = self.balance()
+        if st == 200:
+            return True, bal
+        st2, pos = self.positions()
+        if st2 == 200:
+            return True, {"positions": pos}
+        code = (bal.get("error") or {}).get("code") if isinstance(bal, dict) else None
+        return False, {"balance": (st, bal), "positions": (st2, pos), "code": code}
+
     def points_history(self):
         return self._call("GET", "/v1/me/points/history")
 

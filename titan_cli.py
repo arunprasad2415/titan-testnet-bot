@@ -131,6 +131,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--save-key", action="store_true", help="store the wallet key for next time")
     ap.add_argument("--dry-run", action="store_true", help="show orders without sending")
+    ap.add_argument("--use-session", action="store_true",
+                    help="reuse the saved session.json instead of prompting for a key")
     ap.add_argument("--demo", action="store_true",
                     help="walk the settings wizard without an account (forces dry run)")
     a = ap.parse_args()
@@ -138,6 +140,16 @@ def main():
         a.dry_run = True
 
     print(BANNER)
+
+    if a.use_session:
+        if not os.path.exists(SESSION):
+            print("  no saved session, run without --use-session")
+            sys.exit(1)
+        sess = json.load(open(SESSION))
+        client = TitanClient(SESSION)
+        address = sess.get("address", "?")
+        print(f"  reusing session for {address}")
+        return wizard(a, client, address)
 
     key = None
     if a.save_key and os.path.exists(WALLET):
@@ -160,30 +172,22 @@ def main():
     print("[1/4] minting session key ...")
     client, address, sess = mint_session(key)
     print(f"      session {sess['sessionId'][:16]}...  expires {sess['expiresAt']}")
+    return wizard(a, client, address)
 
+
+def wizard(a, client, address):
     print("[2/4] checking the account on Titan ...")
     if a.demo:
         print("      demo mode: skipping the account check")
-        st, me = 200, {"demo": True}
+        ready, me = True, {"demo": True}
     else:
-        st, me = 0, {}
-        unbound = False
-        for label, fn in (("me", client.me), ("balance", client.balance),
-                          ("positions", client.positions)):
-            st, res = fn()
-            code = (res.get("error") or {}).get("code") if isinstance(res, dict) else None
-            print(f"      {label}: {st} {code or 'ok'}")
-            if st == 200:
-                me = res
-                break
-            if code == "party_unbound":
-                unbound = True
-                break
-        if st != 200 and not unbound:
-            print("      every probe failed, run TITAN_DEBUG=1 ./run.sh and send the block")
-    if unbound:
-        print("""
-  ✗ this wallet has no Titan account yet.
+        ready, me = client.account_ready()
+        print("      " + ("account ok" if ready else "not ready") + ": " + json.dumps(me)[:140])
+    if not ready:
+        code = (me.get("code") if isinstance(me, dict) else None) or ""
+        if code == "party_unbound" or "party_unbound" in json.dumps(me):
+            print("""
+  \u2717 this wallet has no Titan account yet.
 
     create the account first, one time, in a browser:
       1. open https://testnet.titanx.cc
@@ -193,24 +197,23 @@ def main():
 
     nothing was traded and nothing was signed beyond the session.
 """)
-        sys.exit(2)
-    if st != 200:
-        print("  account check failed:", st, json.dumps(me)[:200])
+            sys.exit(2)
+        print("  account check failed, run TITAN_DEBUG=1 ./run.sh and send the block")
         sys.exit(1)
-    print("      account ok:", json.dumps(me)[:160])
 
     print("[3/4] balance")
     if a.demo:
         st, bal = 200, {"demo": "no balance in demo mode"}
+        open_pos = []
     else:
         st, bal = client.balance()
-    print("      ", st, json.dumps(bal)[:200])
-    st, pos = (200, {"positions": []}) if a.demo else client.positions()
-    open_pos = []
-    if st == 200:
-        body = pos.get("positions", pos) if isinstance(pos, dict) else pos
-        if isinstance(body, list):
-            open_pos = [p for p in body if str(p.get("size", "0")).strip("0.-") != ""]
+        print("      ", st, json.dumps(bal)[:200])
+        stp, pos = client.positions()
+        open_pos = []
+        if stp == 200:
+            items = pos.get("items", pos.get("positions", [])) if isinstance(pos, dict) else pos
+            if isinstance(items, list):
+                open_pos = [p for p in items if str(p.get("size", "0")).strip("0.-") != ""]
         print(f"       open positions: {len(open_pos)}")
     if open_pos:
         print("  ✗ a position is already open, close it first so the bot starts flat")

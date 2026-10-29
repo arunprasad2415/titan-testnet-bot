@@ -79,10 +79,11 @@ def main():
     client = None
     if not args.dry_run:
         client = TitanClient(args.session)
-        st, me = client.me()
-        if st != 200:
-            print("session rejected:", me)
+        ready, info = client.account_ready()
+        if not ready:
+            print("account not ready:", json.dumps(info)[:220])
             sys.exit(1)
+        print("account ok:", json.dumps(info)[:160])
 
     traded = 0.0
     for i in range(1, args.cycles + 1):
