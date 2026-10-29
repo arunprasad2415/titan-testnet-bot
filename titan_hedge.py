@@ -19,7 +19,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from titan_client import TitanClient  # noqa: E402
+from titan_client import TitanClient, price5  # noqa: E402
 
 KILL = "/root/titan/KILL"
 FEEDS = {
@@ -101,8 +101,8 @@ def main():
             time.sleep(3)
             px = mark_price(args.market)
 
-        buy_px = fmt(px * (1 + args.slip), 5)
-        sell_px = fmt(px * (1 - args.slip), 5)
+        buy_px = price5(px * (1 + args.slip))
+        sell_px = price5(px * (1 - args.slip))
         notional = args.size * px
         traded += notional * 2
 

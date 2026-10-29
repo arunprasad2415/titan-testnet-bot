@@ -258,6 +258,10 @@ def wizard(a, client, address):
         os.chmod(WALLET, 0o600)
         print("  wallet key saved to", WALLET)
 
+    if not a.demo:
+        st, r = client.set_leverage("BTC-USDCX", lev)
+        print("  leverage ->", st, json.dumps(r)[:100])
+
     ns = argparse.Namespace(market="BTC-USDCX", size=size, leverage=lev, tp=tp, sl=sl,
                             timeout=timeout, max_dd=dd, cycles=cycles, pause=3.0,
                             slip=0.0004, session=SESSION, dry_run=a.dry_run)

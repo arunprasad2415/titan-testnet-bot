@@ -72,6 +72,20 @@ def req_line(name, value):
     return f"{name}: {value}"
 
 
+def price5(value):
+    """Non-integer prices may carry at most 5 significant figures."""
+    from decimal import Decimal, ROUND_HALF_UP
+    d = Decimal(str(value))
+    if d == 0:
+        return "0.0"
+    exp = d.adjusted() - 4
+    q = Decimal(1).scaleb(exp)
+    out = format(d.quantize(q, rounding=ROUND_HALF_UP), "f")
+    if "." in out:
+        out = out.rstrip("0").rstrip(".")
+    return out
+
+
 class TitanClient:
     def __init__(self, session_path, base=BASE, timeout=20):
         self.base = base
@@ -123,6 +137,15 @@ class TitanClient:
         return h
 
     # ---------- transport ----------
+    def _signed_write(self, method, path, body, canonical):
+        """Every write needs both signatures: the action one names the credential,
+        the request one covers the body. One alone answers missing_headers."""
+        payload = json.dumps(body, separators=(",", ":")).encode()
+        hdrs = self._action_headers(canonical)
+        req = self._request_headers(method, path, "", payload)
+        hdrs.update({k: v for k, v in req.items() if k.startswith("X-Request")})
+        return self._call(method, path, body=body, headers=hdrs)
+
     def _call(self, method, path, query="", body=None, headers=None):
         url = self.base + path + (("?" + query) if query else "")
         data = json.dumps(body, separators=(",", ":")).encode() if body is not None else None
@@ -194,9 +217,8 @@ class TitanClient:
             line("nonce", nonce),
             line("ts", ts),
         ])
-        body = {"market": market, "leverage": leverage, "nonce": nonce, "ts": ts}
-        return self._call("POST", f"/v1/me/leverage/{market}", body=body,
-                          headers=self._action_headers(canonical))
+        body = {"leverage": leverage, "nonce": nonce, "ts": ts}
+        return self._signed_write("PUT", f"/v1/me/leverage/{market}", body, canonical)
 
     def cancel(self, order_id):
         nonce, ts = self._nonce("cancel"), iso_ts()
@@ -211,8 +233,8 @@ class TitanClient:
         return self._call("POST", f"/v1/me/orders/{order_id}/cancel", body=body,
                           headers=self._action_headers(canonical))
 
-    def order(self, market, side, size, price, otype="limit", tif="IOC",
-              reduce_only=False, client_order_id=""):
+    def order(self, market, side, size, price, otype="limit", tif="ioc",
+              reduce_only=False, client_order_id="", tp=None, sl=None):
         nonce, ts = self._nonce("order"), iso_ts()
         zero = dec10("0")
         canonical = "\n".join([
@@ -235,12 +257,17 @@ class TitanClient:
             "market": market, "side": side, "type": otype,
             "size": dec10(size), "price": dec10(price), "tif": tif,
             "reduceOnly": reduce_only,
-            "tp": {"trigger": zero, "limit": zero, "size": zero},
-            "sl": {"trigger": zero, "limit": zero, "size": zero},
             "nonce": nonce, "ts": ts,
         }
-        return self._call("POST", "/v1/orders", body=body,
-                          headers=self._action_headers(canonical))
+        # tp/sl are only attached when asked for; zero-filled objects are rejected
+        # with bad_attached
+        if tp is not None:
+            body["tp"] = tp
+        if sl is not None:
+            body["sl"] = sl
+        # the engine wants the action signature (credential) AND the request
+        # signature over the body; one without the other answers missing_headers
+        return self._signed_write("POST", "/v1/orders", body, canonical)
 
     def _canonical_generic(self, action):
         nonce, ts = self._nonce(action), iso_ts()

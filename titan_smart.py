@@ -21,7 +21,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from titan_client import TitanClient  # noqa: E402
+from titan_client import TitanClient, price5  # noqa: E402
 
 KILL = "/root/titan/KILL"
 TAKER_BPS = 4.5
@@ -93,14 +93,14 @@ class Smart:
 
     # ---------- orders ----------
     def open_side(self, side):
-        px = tick(spot(self.a.market) * (1 + self.a.slip if side == "buy" else 1 - self.a.slip))
+        px = price5(spot(self.a.market) * (1 + self.a.slip if side == "buy" else 1 - self.a.slip))
         if self.a.dry_run:
             self.entry = spot(self.a.market)
             self.side = side
             print(f"  DRY open {side} {self.a.size} @ {px} (entry {self.entry:.2f})")
             return True
         st, res = self.client.order(self.a.market, side, self.a.size, px,
-                                    tif="IOC", reduce_only=False)
+                                    tif="ioc", reduce_only=False)
         print(f"  order {side} -> {st} {json.dumps(res)[:200]}")
         if st not in (200, 201):
             return False
@@ -110,13 +110,13 @@ class Smart:
 
     def close_pos(self, reason):
         side = "sell" if self.side == "buy" else "buy"
-        px = tick(spot(self.a.market) * (1 - self.a.slip if side == "sell" else 1 + self.a.slip))
+        px = price5(spot(self.a.market) * (1 - self.a.slip if side == "sell" else 1 + self.a.slip))
         if self.a.dry_run:
             print(f"  DRY close {side} {self.a.size} @ {px} ({reason})")
             self.side = None
             return True
         st, res = self.client.order(self.a.market, side, self.a.size, px,
-                                    tif="IOC", reduce_only=True)
+                                    tif="ioc", reduce_only=True)
         print(f"  close {side} -> {st} {json.dumps(res)[:200]} ({reason})")
         if st in (200, 201):
             self.side = None
