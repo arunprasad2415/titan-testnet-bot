@@ -16,6 +16,7 @@ floor unless --allow-thin-tp is passed.
 import argparse
 import json
 import os
+import random
 import sys
 import time
 import urllib.request
@@ -24,6 +25,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from titan_client import TitanClient, price5  # noqa: E402
 
 KILL = "/root/titan/KILL"
+
+
+def jitter(base, spread=0.35):
+    """Human-ish timing: never the same interval twice."""
+    return max(0.5, random.gauss(base, base * spread))
+
+
+def rsize(base, lo=0.75, hi=1.30):
+    """Size varies per cycle, so the tape does not read as one fixed bot."""
+    return round(base * random.uniform(lo, hi), 6)
 TAKER_BPS = 4.5
 MAKER_BPS = 1.5
 FEEDS = {
@@ -108,13 +119,20 @@ class Smart:
 
     # ---------- orders ----------
     def open_side(self, side):
-        px = price5(self.price() * (1 + self.a.slip if side == "buy" else 1 - self.a.slip))
+        slip = self.a.slip
+        if getattr(self.a, "stealth", False):
+            slip = random.uniform(self.a.slip * 0.6, self.a.slip * 2.2)
+        px = price5(self.price() * (1 + slip if side == "buy" else 1 - slip))
         if self.a.dry_run:
             self.entry = self.price()
             self.side = side
             print(f"  DRY open {side} {self.a.size} @ {px} (entry {self.entry:.2f})")
             return True
-        st, res = self.client.order(self.a.market, side, self.a.size, px,
+        size = self.a.size
+        if getattr(self.a, "stealth", False):
+            size = rsize(self.a.size)
+        self.last_size = size
+        st, res = self.client.order(self.a.market, side, size, px,
                                     tif="ioc", reduce_only=False)
         print(f"  order {side} -> {st} {json.dumps(res)[:200]}")
         if st not in (200, 201):
@@ -130,7 +148,7 @@ class Smart:
             print(f"  DRY close {side} {self.a.size} @ {px} ({reason})")
             self.side = None
             return True
-        st, res = self.client.order(self.a.market, side, self.a.size, px,
+        st, res = self.client.order(self.a.market, side, getattr(self, "last_size", self.a.size), px,
                                     tif="ioc", reduce_only=True)
         print(f"  close {side} -> {st} {json.dumps(res)[:200]} ({reason})")
         if st in (200, 201):
@@ -154,6 +172,8 @@ class Smart:
                 break
             self.cycles += 1
             print(f"cycle {self.cycles}: waiting for momentum")
+            if getattr(self.a, "stealth", False):
+                self.a.momentum = max(0.002, random.gauss(self.a.momentum, self.a.momentum * 0.3))
             mom = self.wait_signal()
             if mom is None:
                 print("  no signal in window, skipping")
@@ -189,7 +209,14 @@ class Smart:
             if self.realized <= -a.max_dd:
                 print(f"  drawdown guard hit ({self.realized:.2f}% <= -{a.max_dd}%), stopping")
                 break
-            time.sleep(a.pause)
+            if getattr(a, "stealth", False):
+                pause = jitter(a.pause, 0.6)
+                if self.cycles % random.randint(4, 9) == 0:
+                    pause = random.uniform(25, 90)      # occasional long break
+                    print(f"  idle {pause:.0f}s (human pause)")
+                time.sleep(pause)
+            else:
+                time.sleep(a.pause)
 
         if self.side:
             self.close_pos("shutdown")
@@ -210,6 +237,8 @@ def main():
     ap.add_argument("--cycles", type=int, default=10)
     ap.add_argument("--pause", type=float, default=3.0)
     ap.add_argument("--slip", type=float, default=0.0004)
+    ap.add_argument("--stealth", action="store_true",
+                    help="randomise timing, size, price offset and gate so the flow is not a fixed loop")
     ap.add_argument("--momentum", type=float, default=0.01,
                     help="momentum gate in percent over a 20s window")
     ap.add_argument("--session", default="/root/titan/session.json")

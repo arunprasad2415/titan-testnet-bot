@@ -14,6 +14,7 @@ cycles, and any non-2xx answer stops the loop instead of retrying blind.
 import argparse
 import json
 import os
+import random
 import sys
 import time
 import urllib.request
@@ -78,6 +79,8 @@ def main():
     ap.add_argument("--max-notional", type=float, default=5000.0)
     ap.add_argument("--session", default="/root/titan/session.json")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--stealth", action="store_true",
+                    help="randomise leg sizes, offsets and spacing so the pair is not a fixed mirror")
     args = ap.parse_args()
 
     client = None
@@ -105,8 +108,16 @@ def main():
             time.sleep(3)
             px = mark_price(args.market, client)
 
-        buy_px = price5(px * (1 + args.slip))
-        sell_px = price5(px * (1 - args.slip))
+        slip = args.slip
+        size_a = size_b = args.size
+        gap = 1.5
+        if args.stealth:
+            slip = random.uniform(args.slip * 0.5, args.slip * 2.5)
+            size_a = round(args.size * random.uniform(0.85, 1.2), 6)
+            size_b = round(args.size * random.uniform(0.85, 1.2), 6)
+            gap = random.uniform(1.0, 6.0)
+        buy_px = price5(px * (1 + slip))
+        sell_px = price5(px * (1 - slip))
         notional = args.size * px
         traded += notional * 2
 
@@ -126,7 +137,7 @@ def main():
         if st2 not in (200, 201):
             break
 
-        time.sleep(args.sleep)
+        time.sleep(random.uniform(args.sleep * 0.6, args.sleep * 1.8) if args.stealth else args.sleep)
         stp, pos = client.positions()
         if stp == 200:
             body = pos.get("positions", pos) if isinstance(pos, dict) else pos
