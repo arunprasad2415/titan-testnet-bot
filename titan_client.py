@@ -1,0 +1,252 @@
+#!/usr/bin/env python3
+"""Titan Exchange testnet API client (Canton perp DEX).
+
+Auth model, reverse engineered from the app bundle:
+  session   ed25519 key registered once by a wallet signature (app UI)
+  headers   X-Session-Id + X-Session-Sig  (action endpoints: POST /v1/orders, ...)
+            X-Session-Id + X-Request-Ts + X-Request-Nonce + X-Request-Sig (plain GETs)
+
+Canonical strings are exact; the server rejected a bad nonce and an unknown
+session, which proves the format is parsed and verified.
+
+Session file (JSON):  {"sessionId": "...", "privateKey": "<hex seed>", "expiresAtMs": 0}
+"""
+import datetime
+import hashlib
+import json
+import os
+import time
+import urllib.error
+import urllib.request
+import uuid
+
+from nacl.signing import SigningKey
+
+BASE = "https://testnet-api.titanx.cc"
+ORIGIN = "https://testnet.titanx.cc"
+# the request canonical signs the API origin, not the app origin (verified live)
+SIGN_ORIGIN = BASE
+UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+      "Chrome/156.0.0.0 Safari/537.36")
+EMPTY_SHA = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+BASE_HEADERS = {
+    "accept": "application/json",
+    "user-agent": UA,
+    "sec-ch-ua": '"Chromium";v="156", "Not:A-Brand";v="8"',
+    "sec-ch-ua-platform": '"Windows"',
+    "referer": ORIGIN + "/",
+}
+
+
+def iso_ts(dt=None):
+    """JS G(): ISO-8601 UTC, milliseconds with trailing zeros trimmed."""
+    dt = dt or datetime.datetime.now(datetime.timezone.utc)
+    head = dt.strftime("%Y-%m-%dT%H:%M:%S")
+    ms = f"{dt.microsecond // 1000:03d}".rstrip("0")
+    return f"{head}.{ms}Z" if ms else f"{head}Z"
+
+
+def dec10(value):
+    """JS W(): decimal string forced to 10 fractional digits."""
+    s = str(value).strip()
+    neg = s.startswith("-")
+    if neg:
+        s = s[1:]
+    whole, _, frac = s.partition(".")
+    whole = whole.lstrip("0") or "0"
+    frac = (frac + "0" * 10)[:10]
+    body = f"{whole}.{frac}"
+    if whole == "0" and frac == "0" * 10:
+        return body
+    return ("-" if neg else "") + body
+
+
+def line(name, value):
+    """JS U(): 'name:' padded to 14 chars, then the value."""
+    return f"{name}:".ljust(14) + str(value)
+
+
+def req_line(name, value):
+    """Request canonical uses a single space after the colon, no padding."""
+    return f"{name}: {value}"
+
+
+class TitanClient:
+    def __init__(self, session_path, base=BASE, timeout=20):
+        self.base = base
+        self.timeout = timeout
+        s = json.load(open(session_path))
+        self.session_id = s["sessionId"]
+        seed = bytes.fromhex(s["privateKey"])
+        self.sk = SigningKey(seed)
+        self.pub_hex = self.sk.verify_key.encode().hex()
+        self.expires_at_ms = int(s.get("expiresAtMs") or 0)
+        self.nonces = {}
+
+    # ---------- signing ----------
+    def _nonce(self, scope):
+        n = max(self.nonces.get(scope, 0) + 1, int(time.time() * 1000))
+        self.nonces[scope] = n
+        return n
+
+    def _sign(self, canonical):
+        return self.sk.sign(canonical.encode()).signature.hex()
+
+    def _request_headers(self, method, path, query="", body=b""):
+        ts = iso_ts()
+        nonce = str(self._nonce("request"))
+        body_sha = hashlib.sha256(body).hexdigest() if body else EMPTY_SHA
+        canonical = "\n".join([
+            "Daml-Perp-Request v=2",
+            req_line("aud", "rest"),
+            req_line("origin", SIGN_ORIGIN),
+            req_line("session", self.session_id),
+            req_line("conn", ""),
+            req_line("method", method),
+            req_line("path", path),
+            req_line("query", query),
+            req_line("body", body_sha),
+            req_line("ts", ts),
+            req_line("nonce", nonce),
+            req_line("expires", ""),
+        ])
+        h = dict(BASE_HEADERS)
+        h.update({"X-Session-Id": self.session_id, "X-Request-Ts": ts,
+                  "X-Request-Nonce": nonce, "X-Request-Sig": self._sign(canonical)})
+        return h
+
+    def _action_headers(self, canonical):
+        h = dict(BASE_HEADERS)
+        h.update({"X-Session-Id": self.session_id, "X-Session-Sig": self._sign(canonical)})
+        return h
+
+    # ---------- transport ----------
+    def _call(self, method, path, query="", body=None, headers=None):
+        url = self.base + path + (("?" + query) if query else "")
+        data = json.dumps(body, separators=(",", ":")).encode() if body is not None else None
+        hdrs = headers or self._request_headers(method, path, query, data or b"")
+        if data:
+            hdrs["content-type"] = "application/json"
+        req = urllib.request.Request(url, data=data, headers=hdrs, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout) as r:
+                raw = r.read()
+                return r.status, (json.loads(raw) if raw else {})
+        except urllib.error.HTTPError as e:
+            raw = e.read()
+            try:
+                return e.code, json.loads(raw)
+            except Exception:
+                return e.code, {"raw": raw[:200].decode("utf-8", "ignore")}
+
+    # ---------- public ----------
+    def markets(self):
+        return self._call("GET", "/v1/markets")
+
+    def market(self, symbol):
+        return self._call("GET", f"/v1/markets/{symbol}")
+
+    # ---------- account ----------
+    def me(self):
+        return self._call("GET", "/v1/me")
+
+    def balance(self):
+        return self._call("GET", "/v1/me/balance")
+
+    def positions(self):
+        return self._call("GET", "/v1/me/positions")
+
+    def fills(self, limit=50):
+        return self._call("GET", "/v1/me/fills", f"limit={limit}")
+
+    def points_history(self):
+        return self._call("GET", "/v1/me/points/history")
+
+    def faucet(self):
+        return self._call("POST", "/v1/me/faucet", body={},
+                          headers=self._action_headers(self._canonical_generic("faucet")))
+
+    def set_leverage(self, market, leverage):
+        nonce, ts = self._nonce("leverage"), iso_ts()
+        canonical = "\n".join([
+            "Daml-Perp-Leverage v=1",
+            line("sessionId", self.session_id),
+            line("market", market),
+            line("leverage", leverage),
+            line("nonce", nonce),
+            line("ts", ts),
+        ])
+        body = {"market": market, "leverage": leverage, "nonce": nonce, "ts": ts}
+        return self._call("POST", f"/v1/me/leverage/{market}", body=body,
+                          headers=self._action_headers(canonical))
+
+    def cancel(self, order_id):
+        nonce, ts = self._nonce("cancel"), iso_ts()
+        canonical = "\n".join([
+            "Daml-Perp-Cancel v=1",
+            line("sessionId", self.session_id),
+            line("orderId", order_id),
+            line("nonce", nonce),
+            line("ts", ts),
+        ])
+        body = {"nonce": nonce, "ts": ts}
+        return self._call("POST", f"/v1/me/orders/{order_id}/cancel", body=body,
+                          headers=self._action_headers(canonical))
+
+    def order(self, market, side, size, price, otype="limit", tif="IOC",
+              reduce_only=False, client_order_id=""):
+        nonce, ts = self._nonce("order"), iso_ts()
+        zero = dec10("0")
+        canonical = "\n".join([
+            "Daml-Perp-Order v=1",
+            line("sessionId", self.session_id),
+            line("market", market),
+            line("side", side),
+            line("type", otype),
+            line("size", dec10(size)),
+            line("price", dec10(price)),
+            line("tif", tif),
+            line("reduceOnly", "true" if reduce_only else "false"),
+            line("tpTrigger", zero), line("tpLimit", zero), line("tpSize", zero),
+            line("slTrigger", zero), line("slLimit", zero), line("slSize", zero),
+            line("clientOrderId", client_order_id),
+            line("nonce", nonce),
+            line("ts", ts),
+        ])
+        body = {
+            "market": market, "side": side, "type": otype,
+            "size": dec10(size), "price": dec10(price), "tif": tif,
+            "reduceOnly": reduce_only,
+            "tp": {"trigger": zero, "limit": zero, "size": zero},
+            "sl": {"trigger": zero, "limit": zero, "size": zero},
+            "nonce": nonce, "ts": ts,
+        }
+        return self._call("POST", "/v1/orders", body=body,
+                          headers=self._action_headers(canonical))
+
+    def _canonical_generic(self, action):
+        nonce, ts = self._nonce(action), iso_ts()
+        return "\n".join([
+            "Daml-Perp-Request v=2",
+            line("aud", "rest"),
+            line("origin", SIGN_ORIGIN),
+            line("session", self.session_id),
+            line("conn", ""),
+            line("method", "POST"),
+            line("path", f"/v1/me/{action}"),
+            line("query", ""),
+            line("body", EMPTY_SHA),
+            line("ts", ts),
+            line("nonce", nonce),
+            line("expires", ""),
+        ])
+
+
+if __name__ == "__main__":
+    import sys
+    path = sys.argv[1] if len(sys.argv) > 1 else os.path.expanduser("~/titan/session.json")
+    c = TitanClient(path)
+    for name, fn in (("markets", c.markets), ("me", c.me), ("balance", c.balance),
+                     ("positions", c.positions)):
+        print(name, "->", fn())
