@@ -166,8 +166,22 @@ def main():
         print("      demo mode: skipping the account check")
         st, me = 200, {"demo": True}
     else:
-        st, me = client.me()
-    if st == 403 and (me.get("error") or {}).get("code") == "party_unbound":
+        st, me = 0, {}
+        unbound = False
+        for label, fn in (("me", client.me), ("balance", client.balance),
+                          ("positions", client.positions)):
+            st, res = fn()
+            code = (res.get("error") or {}).get("code") if isinstance(res, dict) else None
+            print(f"      {label}: {st} {code or 'ok'}")
+            if st == 200:
+                me = res
+                break
+            if code == "party_unbound":
+                unbound = True
+                break
+        if st != 200 and not unbound:
+            print("      every probe failed, run TITAN_DEBUG=1 ./run.sh and send the block")
+    if unbound:
         print("""
   ✗ this wallet has no Titan account yet.
 
