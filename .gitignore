@@ -1,9 +1,49 @@
-__pycache__/
-*.pyc
-session.json
+# ---- secrets: never commit these ----
 wallet.json
 accounts.json
 accounts.example.json
+session.json
 sessions/
 keys/
+*.pem
+*.key
+.env
+.env.*
+
+# ---- runtime state ----
 KILL
+PROXY_ALERT
+*.log
+logs/
+
+# ---- python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- node ----
+node_modules/
+npm-debug.log*
+pnpm-debug.log*
+yarn-error.log*
+
+# ---- editors / os ----
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*~
+
+# ---- local scratch ----
+*.db
+*.sqlite
+*.sqlite3
+*.bak
+*.tmp

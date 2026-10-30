@@ -127,7 +127,7 @@ every later run skips the prompt:
 
 ```
   using saved wallet key (no prompt)
-  wallet 0x46FF0054d657e9E63E7dd34b8771C78D0BF7c1C2
+  wallet 0x9F2e1C7a5B3d4E8f6A1c2B3d4E5f6A7b8C9d0E1f
   session on disk, reusing it
       session 1930b213a0c58e90...  159h left
 ```
@@ -135,7 +135,7 @@ every later run skips the prompt:
 The session is reused too, so a restart does not even hit the auth endpoint. Then:
 
 ```
-  wallet 0x46FF0054d657e9E63E7dd34b8771C78D0BF7c1C2
+  wallet 0x9F2e1C7a5B3d4E8f6A1c2B3d4E5f6A7b8C9d0E1f
 [1/4] minting session key ...
       session 3442e28f468c6409...  expires 2026-11-05T19:21:49.293Z
 ```
@@ -357,7 +357,7 @@ Titan Auto Trade Bot - add wallets
     name: alice
     private key (hidden, stays on this machine): ********
     proxy (press Enter for direct):
-    saved alice  0x46FF0054d657e9E63E7dd34b8771C78D0BF7c1C2  direct
+    saved alice  0x9F2e1C7a5B3d4E8f6A1c2B3d4E5f6A7b8C9d0E1f  direct
 
   wallet 2 of 2
     name: bob
