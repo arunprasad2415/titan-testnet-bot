@@ -336,7 +336,36 @@ systemctl disable titan-farm    # do not start after a reboot
 
 ## 8. Several wallets, simply
 
-One command per wallet. No editing JSON by hand.
+Three lines. That is the whole thing.
+
+```bash
+./add.sh          # asks: name, key, proxy. repeat for each wallet
+./run.sh          # starts every wallet you stored
+./status.sh       # one line per wallet
+```
+
+What `./add.sh` looks like:
+
+```
+Titan Auto Trade Bot - add a wallet
+-----------------------------------
+  wallet name (anything you like): alice
+  private key (hidden, stays on this machine): ********
+  proxy (press Enter for direct):
+  saved alice  0x46FF0054d657e9E63E7dd34b8771C78D0BF7c1C2  direct
+  add another wallet? [y/N]: y
+  wallet name (anything you like): bob
+  private key (hidden, stays on this machine): ********
+  proxy (press Enter for direct): socks5://user:pass@1.2.3.4:1080
+  saved bob  0x9a1c...  via 1.2.3.4:1080
+  add another wallet? [y/N]: n
+
+2 wallet(s) stored in /root/titan/accounts.json (mode 600):
+  alice        direct
+  bob          1.2.3.4:1080
+```
+
+If you prefer one line instead of questions:
 
 ```bash
 ./add.sh alice 0xPRIVATE_KEY_ALICE
