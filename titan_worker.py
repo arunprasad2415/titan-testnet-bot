@@ -61,7 +61,17 @@ def main():
             sys.exit(3)
         ready, info = client.account_ready()
         if not ready:
-            print("account not ready:", json.dumps(info)[:200], flush=True)
+            blob = json.dumps(info)
+            if "unauthorized" in blob or "party_unbound" in blob or "401" in blob:
+                print(f"""
+  x this wallet has no Titan account yet: {ns.name}
+    1. open https://testnet.titanx.cc/?ref=FBCF73398E in a browser
+    2. connect this exact wallet (its key is in accounts.json)
+    3. click enable trading and sign once
+    4. run again, this wallet will start on its own
+""", flush=True)
+            else:
+                print("account not ready:", blob[:200], flush=True)
             sys.exit(1)
         st, lev = client.set_leverage(ns.market, ns.leverage)
         print(f"leverage {ns.leverage}x -> {st}", flush=True)

@@ -55,6 +55,35 @@ def log_stats():
     }
 
 
+def wallets():
+    """One line per wallet in accounts.json."""
+    cfg_path = "/root/titan/accounts.json"
+    out = []
+    if not os.path.exists(cfg_path):
+        return out
+    try:
+        cfg = json.load(open(cfg_path))
+    except Exception:
+        return out
+    for acc in cfg.get("accounts", []):
+        name = acc.get("name", "?")
+        sess = f"/root/titan/sessions/{name}.json"
+        proxy = acc.get("proxy") or ""
+        if not os.path.exists(sess):
+            out.append((name, "no session yet", "", "run it once to mint"))
+            continue
+        try:
+            c = TitanClient(sess, proxy=proxy or None)
+            _, bal = c.balance()
+            _, pos = c.positions()
+            items = [(p["market"], p["size"]) for p in pos.get("items", [])]
+            out.append((name, bal.get("balance", "?"), "flat" if not items else str(items),
+                        "via " + proxy.split("@")[-1] if proxy else "direct"))
+        except Exception as e:
+            out.append((name, "error", str(e)[:40], ""))
+    return out
+
+
 def account():
     if not os.path.exists(SESSION):
         return None
@@ -88,8 +117,14 @@ def render():
         last = open("/root/titan/PROXY_ALERT").read().strip().splitlines()
         if last:
             lines.insert(2, "ALERT      " + last[-1][:100])
+    ws = wallets()
+    if len(ws) > 1:
+        lines.append("wallets")
+        for name, bal, pos, extra in ws:
+            lines.append(f"  {name:10} {bal:>16}  {pos}  {extra}")
+    lines.append("log")
     for l in st.get("last", []):
-        lines.append("  " + l)
+        lines.append("  " + l.strip())
     return "\n".join(lines)
 
 
