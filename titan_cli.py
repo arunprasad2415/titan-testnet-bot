@@ -129,7 +129,9 @@ def mint_session(private_key, session_path=SESSION, proxy=None):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--save-key", action="store_true", help="store the wallet key for next time")
+    ap.add_argument("--save-key", action="store_true", help="(kept for compatibility, saving is now automatic)")
+    ap.add_argument("--new-key", action="store_true", help="forget the saved key and enter a different wallet")
+    ap.add_argument("--no-save", action="store_true", help="do not store the key you type")
     ap.add_argument("--dry-run", action="store_true", help="show orders without sending")
     ap.add_argument("--use-session", action="store_true",
                     help="reuse the saved session.json instead of prompting for a key")
@@ -151,23 +153,51 @@ def main():
         print(f"  reusing session for {address}")
         return wizard(a, client, address)
 
-    key = None
-    if a.save_key and os.path.exists(WALLET):
-        key = json.load(open(WALLET))["privateKey"]
-        print("  using saved wallet key")
+    if a.new_key:
+        for f in (WALLET, SESSION):
+            if os.path.exists(f):
+                os.remove(f)
+        print("  forgotten: saved key and session")
+
+    key, reused = None, False
+    if os.path.exists(WALLET):
+        try:
+            key = json.load(open(WALLET))["privateKey"]
+            reused = True
+            print("  using saved wallet key (no prompt)")
+        except Exception:
+            key = None
+
     if not key:
-        key = getpass.getpass("  private key (hidden): ").strip()
+        key = getpass.getpass("  private key (hidden, saved after this): ").strip()
+        if key and not key.startswith("0x"):
+            key = "0x" + key
+        if key and not a.no_save:
+            json.dump({"privateKey": key}, open(WALLET, "w"))
+            os.chmod(WALLET, 0o600)
+            print(f"  key saved to {WALLET}, you will not be asked again")
     if not key:
         print("  no key, exit")
         sys.exit(1)
-    if not key.startswith("0x"):
-        key = "0x" + key
     try:
         acct = Account.from_key(key)
     except Exception:
         print("  that is not a valid EVM private key")
         sys.exit(1)
     print(f"  wallet {acct.address}")
+    if reused and os.path.exists(SESSION):
+        print("  session on disk, reusing it")
+        sess = json.load(open(SESSION))
+        exp_ms = sess.get("expiresAtMs", 0) or 0
+        hours_left = (exp_ms / 1000 - time.time()) / 3600 if exp_ms else 0
+        if sess.get("address", "").lower() != acct.address.lower():
+            print("  session belongs to another wallet, minting a new one")
+        elif hours_left < 1:
+            print("  saved session is nearly expired, minting a new one")
+        else:
+            client = TitanClient(SESSION)
+            print(f"      session {sess['sessionId'][:16]}...  {hours_left:.0f}h left")
+            return wizard(a, client, acct.address)
 
     print("[1/4] minting session key ...")
     client, address, sess = mint_session(key)

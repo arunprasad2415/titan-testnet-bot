@@ -116,7 +116,19 @@ cd /root/titan
 ```
 
 Paste the private key of the wallet from section 3. It starts with `0x`. Nothing is
-echoed to the screen. Then:
+echoed to the screen.
+
+**This is the only time you type it.** It is saved to `wallet.json` (mode 600) and
+every later run skips the prompt:
+
+```
+  using saved wallet key (no prompt)
+  wallet 0x46FF0054d657e9E63E7dd34b8771C78D0BF7c1C2
+  session on disk, reusing it
+      session 1930b213a0c58e90...  159h left
+```
+
+The session is reused too, so a restart does not even hit the auth endpoint. Then:
 
 ```
   wallet 0x46FF0054d657e9E63E7dd34b8771C78D0BF7c1C2
@@ -334,6 +346,9 @@ python3 titan_multi.py --remove bob  # drop one
 That is the whole workflow. `--add` writes into `accounts.json` with mode 600, one
 entry per wallet, and running with `--config` starts every wallet in its own
 process with its own session.
+
+**No wallet ever asks for a key again.** The key goes in once, at `--add` time, and
+`--config` runs everything from the file.
 
 Every wallet needs its own browser step from section 3 first, with its own wallet
 address. If a wallet has no Titan account the worker stops with the instructions.
@@ -636,6 +651,8 @@ sessions/           per-account session keys (gitignored, mode 600)
 
 ```bash
 ./run.sh                                          # interactive, one account
+./run.sh --new-key                                # forget the saved key, enter another
+./run.sh --no-save                                # do not store the key you type
 ./status.sh                                       # what is it doing
 tail -f /var/log/titan-farm.log                   # live trade log
 systemctl stop titan-farm && ./flat.sh            # stop and close the trade
