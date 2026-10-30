@@ -684,7 +684,9 @@ sessions/           per-account session keys (gitignored, mode 600)
 ## Quick reference
 
 ```bash
-./run.sh                                          # interactive, one account
+./run.sh                                          # every wallet, or the wizard if none
+./run.sh --only bob                               # one wallet out of several
+./run.sh --wizard                                 # force the single-wallet setup
 ./run.sh --new-key                                # forget the saved key, enter another
 ./run.sh --no-save                                # do not store the key you type
 ./status.sh                                       # what is it doing
