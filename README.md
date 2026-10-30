@@ -8,6 +8,10 @@ handle several accounts at once.
 No browser is needed while it runs. One browser step is needed **once**, to create
 the account.
 
+> Create the account through this link:
+> **<https://testnet.titanx.cc/?ref=FBCF73398E>**
+> It is the same site, the `?ref=` part just credits the referral.
+
 ---
 
 ## Contents
@@ -79,7 +83,7 @@ The venue will not let a wallet trade until a **Canton party** is bound to it. T
 binding needs a Cloudflare Turnstile check, which only a real browser can pass. Do
 it once, by hand:
 
-1. Open <https://testnet.titanx.cc> in a normal browser.
+1. Open <https://testnet.titanx.cc/?ref=FBCF73398E> in a normal browser.
 2. Click **Connect wallet** and pick the wallet whose private key you can export.
 3. Approve the signature request in your wallet.
 4. Click **Enable trading** and sign again if it asks.
@@ -602,3 +606,5 @@ systemctl stop titan-farm && ./flat.sh            # stop and close the trade
 systemctl start titan-farm                        # resume
 python3 titan_multi.py --config accounts.json     # several accounts
 ```
+
+New account: <https://testnet.titanx.cc/?ref=FBCF73398E>
