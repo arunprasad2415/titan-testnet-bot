@@ -32,6 +32,7 @@ class NS:
         self.session = session
         self.dry_run = bool(d.get("dry_run", False))
         self.name = d.get("name", "default")
+        self.proxy = d.get("proxy", "") or ""
 
 
 def main():
@@ -77,6 +78,8 @@ def main():
             sys.exit(1)
         st, lev = client.set_leverage(ns.market, ns.leverage)
         print(f"leverage {ns.leverage}x -> {st}", flush=True)
+        if st not in (200, 201):
+            print(f"  warning: leverage not confirmed: {json.dumps(lev)[:120]}", flush=True)
 
     # cycles 0 means run until killed
     if ns.cycles == 0:

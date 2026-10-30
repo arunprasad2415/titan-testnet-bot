@@ -28,16 +28,7 @@ from titan_behavior import Profile            # noqa: E402
 KILL = "/root/titan/KILL"
 
 
-def jitter(base, spread=0.35):
-    """Human-ish timing: never the same interval twice."""
-    return max(0.5, random.gauss(base, base * spread))
-
-
-def rsize(base, lo=0.75, hi=1.30):
-    """Size varies per cycle, so the tape does not read as one fixed bot."""
-    return round(base * random.uniform(lo, hi), 6)
 TAKER_BPS = 4.5
-MAKER_BPS = 1.5
 FEEDS = {
     "BTC-USDCX": ("kraken", "XBTUSD"),
     "ETH-USDCX": ("kraken", "ETHUSD"),
@@ -57,18 +48,6 @@ def spot(market):
         return float(next(iter(json.load(r)["result"].values()))["c"][0])
 
 
-def tick(price):
-    if price >= 1000:
-        step = 0.5
-    elif price >= 100:
-        step = 0.05
-    elif price >= 1:
-        step = 0.005
-    else:
-        step = 0.00005
-    return round(round(price / step) * step, 6)
-
-
 class Smart:
     def __init__(self, a, client=None):
         self.a = a
@@ -79,6 +58,7 @@ class Smart:
         self.client = client if client is not None else (None if a.dry_run else TitanClient(a.session))
         self.proxy = getattr(a, "proxy", "") or ""
         self.proxy_dead_since = 0
+        self.base_momentum = getattr(a, "momentum", 0.01)
         self.specs = {}
         if self.client:
             st, res = self.client.markets()
@@ -98,7 +78,7 @@ class Smart:
             st, res = self.client.mark(self.cur_market)
             if st == 200 and res.get("markPrice"):
                 return float(res["markPrice"])
-        return spot(self.a.market)
+        return spot(self.cur_market)
 
     # ---------- signal ----------
     def sample(self):
@@ -124,7 +104,7 @@ class Smart:
         return m if abs(m) < 0.02 else 0.0      # >2% in 20s is noise, not a signal
 
     def wait_signal(self, max_wait=300):
-        base_gate = getattr(self.a, "momentum", 0.01)
+        base_gate = self.base_momentum
         gate = (self.prof.gate(base_gate) if self.prof else base_gate) / 100.0
         t0 = time.time()
         last_note = 0.0
@@ -142,34 +122,39 @@ class Smart:
         return None            # no random fallback: no signal means no trade
 
     # ---------- orders ----------
+    def size_for(self, market, mark):
+        """Same dollar risk on every market, and never below the venue minimum."""
+        spec = self.specs.get(market, {})
+        dec = int(spec.get("szDecimals", 5))
+        min_notional = float(spec.get("minNotional", 10))
+        if mark <= 0:
+            return 0
+        if getattr(self.a, "size_usd", 0):
+            size = round(self.a.size_usd / mark, dec)
+        else:
+            size = round(self.cur_size, dec)
+        if size * mark < min_notional:
+            size = round((min_notional / mark) * 1.01, dec)
+            print(f"  size raised to the {min_notional} min notional -> {size}")
+        return size
+
     def open_side(self, side):
         slip = self.a.slip
         if self.prof:
             slip = self.prof.slip(self.a.slip)
             self.prof.pre_entry_jitter()
-        px = price5(self.price() * (1 + slip if side == "buy" else 1 - slip))
-        if self.a.dry_run:
-            self.entry = self.price()
-            self.side = side
-            print(f"  DRY open {side} {self.a.size} @ {px} (entry {self.entry:.2f})")
-            return True
-        spec = self.specs.get(self.cur_market, {})
-        dec = int(spec.get("szDecimals", 5))
-        min_notional = float(spec.get("minNotional", 10))
         mark = self.price()
-        if getattr(self.a, "size_usd", 0):
-            size = round(self.a.size_usd / mark, dec)      # notional-based: same $ per market
-        else:
-            size = round(self.cur_size, dec)
-        if size * mark < min_notional:
-            size = round(min_notional / mark, dec)
-            if size * mark < min_notional:                  # rounding down left it short
-                size = round((min_notional / mark) * 1.01, dec)
-            print(f"  size raised to the {min_notional} min notional -> {size}")
+        px = price5(mark * (1 + slip if side == "buy" else 1 - slip))
+        size = self.size_for(self.cur_market, mark)
         if size <= 0:
-            print(f"  size rounds to zero at {dec} decimals, skipping")
+            print("  size rounds to zero, skipping")
             return False
         self.last_size = size
+        if self.a.dry_run:
+            self.entry = mark
+            self.side = side
+            print(f"  DRY open {side} {size} @ {px} (entry {mark:.2f})")
+            return True
         st, res = self.client.order(self.cur_market, side, size, px,
                                     tif=self.cur_tif, reduce_only=False)
         print(f"  order {side} -> {st} {json.dumps(res)[:200]}")
@@ -183,7 +168,7 @@ class Smart:
         side = "sell" if self.side == "buy" else "buy"
         px = price5(self.price() * (1 - self.a.slip if side == "sell" else 1 + self.a.slip))
         if self.a.dry_run:
-            print(f"  DRY close {side} {self.a.size} @ {px} ({reason})")
+            print(f"  DRY close {side} {getattr(self, 'last_size', self.cur_size)} @ {px} ({reason})")
             self.side = None
             return True
         size = getattr(self, "last_size", self.cur_size)
@@ -253,8 +238,12 @@ class Smart:
             if abs(sz) < 1e-9:
                 continue
             side = "sell" if sz > 0 else "buy"
-            px = price5(self.price() * (0.999 if side == "sell" else 1.001))
             market = p.get("market", self.cur_market)
+            stm, mk = self.client.mark(market)
+            ref = float(mk.get("markPrice", 0)) if stm == 200 else self.price()
+            if ref <= 0:
+                continue
+            px = price5(ref * (0.999 if side == "sell" else 1.001))
             st2, res = self.client.order(market, side, abs(sz), px, tif="ioc", reduce_only=True)
             print(f"  flatten {market} {sz:+.6f} -> {st2} {json.dumps(res)[:120]}")
 
@@ -279,8 +268,6 @@ class Smart:
                 print("  stopped: proxy unreachable")
                 return
             self.flatten()
-            if getattr(self.a, "stealth", False):
-                self.a.momentum = max(0.002, random.gauss(self.a.momentum, self.a.momentum * 0.3))
             mom = self.wait_signal()
             if mom is None:
                 print("  no signal in window, skipping")
@@ -297,8 +284,11 @@ class Smart:
             print(f"  signal {side} momentum {mom*100:.3f}% "
                   f"{self.cur_market} size {self.cur_size} {self.cur_tif}")
             if not self.open_side(side):
-                print("  entry failed, stop")
-                break
+                time.sleep(3)
+                print("  entry failed, retrying once")
+                if not self.open_side(side):
+                    print("  entry failed twice, stopping this account")
+                    break
 
             t0 = time.time()
             closed = "timeout"
@@ -307,7 +297,9 @@ class Smart:
                     closed = "kill"
                     break
                 r = self.roe()
-                print(f"    roe {r:+.2f}%  ({time.time()-t0:.0f}s)", end="\r", flush=True)
+                # carriage return only on a real terminal, otherwise logs glue lines together
+                print(f"    roe {r:+.2f}%  ({time.time()-t0:.0f}s)",
+                      end="\r" if sys.stdout.isatty() else "\n", flush=True)
                 if r >= a.tp:
                     closed = "TP"
                     break
@@ -320,9 +312,9 @@ class Smart:
                 time.sleep(1)
             final = self.roe()
             self.realized += final
-            self.flatten()
-            print(f"\n  closed by {closed}, roe {final:+.2f}%, total {self.realized:+.2f}%")
             self.close_pos(closed)
+            self.flatten()          # sweep whatever the close left behind
+            print(f"\n  closed by {closed}, roe {final:+.2f}%, total {self.realized:+.2f}%")
 
             if self.realized <= -a.max_dd:
                 print(f"  drawdown guard hit ({self.realized:.2f}% <= -{a.max_dd}%), stopping")

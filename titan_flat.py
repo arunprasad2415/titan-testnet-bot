@@ -15,16 +15,32 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from titan_client import TitanClient, price5   # noqa: E402
 
-SESSION = "/root/titan/sessions/main.json"
+def pick_session():
+    cfg = "/root/titan/accounts.json"
+    if os.path.exists(cfg):
+        try:
+            for acc in json.load(open(cfg)).get("accounts", []):
+                p = f"/root/titan/sessions/{acc.get('name')}.json"
+                if os.path.exists(p):
+                    return p
+        except Exception:
+            pass
+    for cand in ("/root/titan/sessions/main.json", "/root/titan/session.json"):
+        if os.path.exists(cand):
+            return cand
+    return "/root/titan/session.json"
+
+
+SESSION = pick_session()
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--session", default=SESSION)
+    ap.add_argument("--session", default=None, help="session file, defaults to the first wallet")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
-    c = TitanClient(a.session)
+    c = TitanClient(a.session or SESSION)
     st, pos = c.positions()
     if st != 200:
         print("cannot read positions:", st, json.dumps(pos)[:200])

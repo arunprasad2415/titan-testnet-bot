@@ -82,6 +82,12 @@ def ask_wallet(cfg, index, total, existing):
 
 
 def main():
+    if any(x in ("-h", "--help") for x in sys.argv[1:]):
+        print(__doc__.strip())
+        print("\n  ./add.sh                        ask how many, then one by one")
+        print("  ./add.sh NAME 0xKEY [PROXY]     one line")
+        return
+
     cfg = load()
 
     if len(sys.argv) >= 3:

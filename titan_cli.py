@@ -285,19 +285,14 @@ def wizard(a, client, address):
         print("  aborted")
         return
 
-    if a.save_key:
-        json.dump({"address": address, "privateKey": key}, open(WALLET, "w"), indent=1)
-        os.chmod(WALLET, 0o600)
-        print("  wallet key saved to", WALLET)
-
     if not a.demo:
         st, r = client.set_leverage("BTC-USDCX", lev)
         print("  leverage ->", st, json.dumps(r)[:100])
 
-    ns = argparse.Namespace(market="BTC-USDCX", size=size, leverage=lev, tp=tp, sl=sl,
-                            timeout=timeout, max_dd=dd, cycles=cycles, pause=3.0,
-                            slip=0.0004, session=SESSION, dry_run=a.dry_run,
-                            momentum=momentum)
+    ns = argparse.Namespace(market="BTC-USDCX", size=size, size_usd=0, leverage=lev,
+                            tp=tp, sl=sl, timeout=timeout, max_dd=dd, cycles=cycles,
+                            pause=3.0, slip=0.0004, session=SESSION, dry_run=a.dry_run,
+                            momentum=momentum, stealth=True, name="main", proxy="")
     if mode == "hedge":
         import titan_hedge
         sys.argv = ["titan_hedge.py", "--market", "BTC-USDCX", "--size", str(size),

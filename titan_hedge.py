@@ -56,19 +56,6 @@ def mark_price(market, client=None):
     return _coinbase(pair) if kind == "coinbase" else _kraken(pair)
 
 
-def fmt(price, sz_decimals):
-    """Round a price to the venue's tick (5 significant figures like the app)."""
-    if price >= 1000:
-        step = 0.5
-    elif price >= 100:
-        step = 0.05
-    elif price >= 1:
-        step = 0.005
-    else:
-        step = 0.00005
-    return round(round(price / step) * step, 6)
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--market", default="BTC-USDCX")
@@ -106,7 +93,12 @@ def main():
         except Exception as e:
             print(f"cycle {i}: price feed failed ({e}), retrying once")
             time.sleep(3)
-            px = mark_price(args.market, client)
+            try:
+                px = mark_price(args.market, client)
+            except Exception as e2:
+                print(f"cycle {i}: feed still down ({e2}), skipping this cycle")
+                time.sleep(args.sleep)
+                continue
 
         slip = args.slip
         size_a = size_b = args.size
@@ -118,22 +110,22 @@ def main():
             gap = random.uniform(1.0, 6.0)
         buy_px = price5(px * (1 + slip))
         sell_px = price5(px * (1 - slip))
-        notional = args.size * px
-        traded += notional * 2
+        notional = (size_a + size_b) * px
+        traded += notional
 
         if args.dry_run:
-            print(f"cycle {i}: BUY {args.size} @ {buy_px} | SELL {args.size} @ {sell_px} "
-                  f"| mark {px:.2f} | notional {notional:.2f}")
+            print(f"cycle {i}: BUY {size_a} @ {buy_px} | SELL {size_b} @ {sell_px} "
+                  f"| gap {gap:.1f}s | mark {px:.2f} | notional {notional:.2f}")
             time.sleep(min(args.sleep, 1))
             continue
 
-        st, res = client.order(args.market, "buy", args.size, buy_px, tif="IOC")
-        print(f"cycle {i}: buy -> {st} {json.dumps(res)[:160]}")
+        st, res = client.order(args.market, "buy", size_a, buy_px, tif="ioc")
+        print(f"cycle {i}: buy {size_a} -> {st} {json.dumps(res)[:160]}")
         if st not in (200, 201):
             break
-        time.sleep(1.5)
-        st2, res2 = client.order(args.market, "sell", args.size, sell_px, tif="IOC")
-        print(f"cycle {i}: sell -> {st2} {json.dumps(res2)[:160]}")
+        time.sleep(gap)
+        st2, res2 = client.order(args.market, "sell", size_b, sell_px, tif="ioc")
+        print(f"cycle {i}: sell {size_b} -> {st2} {json.dumps(res2)[:160]}")
         if st2 not in (200, 201):
             break
 
@@ -144,6 +136,19 @@ def main():
             print(f"cycle {i}: positions {json.dumps(body)[:200]}")
 
     if client:
+        stp, pos = client.positions()
+        if stp == 200:
+            for p in pos.get("items", []):
+                sz = float(p.get("size", 0))
+                if abs(sz) < 1e-9:
+                    continue
+                side = "sell" if sz > 0 else "buy"
+                market = p.get("market", args.market)
+                stm, mk = client.mark(market)
+                ref = float(mk.get("markPrice", 0)) if stm == 200 else mark_price(market, client)
+                px = price5(ref * (0.999 if side == "sell" else 1.001))
+                stf, rf = client.order(market, side, abs(sz), px, tif="ioc", reduce_only=True)
+                print(f"flatten {market} {sz:+.6f} -> {stf} {json.dumps(rf)[:120]}")
         st, bal = client.balance()
         print("final balance:", st, json.dumps(bal)[:300])
 

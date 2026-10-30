@@ -15,8 +15,27 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from titan_client import TitanClient   # noqa: E402
 
 LOG = "/var/log/titan-farm.log"
-SESSION = "/root/titan/sessions/main.json"
 SERVICE = "titan-farm"
+
+
+def pick_session():
+    """First wallet in accounts.json, else main.json, else any session file."""
+    cfg = "/root/titan/accounts.json"
+    if os.path.exists(cfg):
+        try:
+            for acc in json.load(open(cfg)).get("accounts", []):
+                p = f"/root/titan/sessions/{acc.get('name')}.json"
+                if os.path.exists(p):
+                    return p
+        except Exception:
+            pass
+    for cand in ("/root/titan/sessions/main.json", "/root/titan/session.json"):
+        if os.path.exists(cand):
+            return cand
+    return "/root/titan/session.json"
+
+
+SESSION = pick_session()
 
 
 def sh(cmd):

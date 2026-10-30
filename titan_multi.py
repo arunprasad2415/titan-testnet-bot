@@ -22,6 +22,7 @@ are within a day of expiry, then re-minted from the key. Cycles 0 means run unti
 you stop it. A KILL file in this directory stops every worker.
 """
 import argparse
+import copy
 import json
 import os
 import signal
@@ -60,7 +61,6 @@ def load(path):
 def ensure_session(acc):
     """Mint a session for this account if missing or close to expiry."""
     from titan_cli import mint_session
-    from titan_auth import SESSION as _unused  # noqa: F401  (import side effect only)
     path = os.path.join(SESS_DIR, f"{acc['name']}.json")
     key = acc.get("privateKey", "")
     if os.path.exists(path):
@@ -103,7 +103,7 @@ def main():
     cfg_path = os.path.join(HERE, "accounts.json")
 
     if a.add or a.remove or a.list:
-        cfg = json.load(open(cfg_path)) if os.path.exists(cfg_path) else dict(EXAMPLE)
+        cfg = json.load(open(cfg_path)) if os.path.exists(cfg_path) else copy.deepcopy(EXAMPLE)
         accs = cfg.setdefault("accounts", [])
         if a.add:
             name, key = a.add
@@ -149,16 +149,20 @@ def main():
         sys.exit(1)
 
     procs = []
-    for acc in accounts:
+    for idx, acc in enumerate(accounts):
         if a.dry_run:
             acc["dry_run"] = True
             path = os.path.join(SESS_DIR, f"{acc['name']}.json")
         else:
-            path = ensure_session(acc)
+            try:
+                path = ensure_session(acc)
+            except Exception as e:
+                print(f"!! [{acc['name']}] could not mint a session: {str(e)[:120]}", flush=True)
+                continue
             if not path:
                 continue
         cfg = {k: v for k, v in acc.items() if k not in ("privateKey",)}
-        cfg["index"] = accounts.index(acc)
+        cfg["index"] = idx
         cmd = [sys.executable, os.path.join(HERE, "titan_worker.py"),
                "--session", path, "--config", json.dumps(cfg)]
         p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,

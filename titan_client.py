@@ -18,7 +18,6 @@ import os
 import time
 import urllib.error
 import urllib.request
-import uuid
 
 try:
     from curl_cffi import requests as _cffi      # Chrome TLS fingerprint, proxy aware
