@@ -2,4 +2,8 @@ __pycache__/
 *.pyc
 session.json
 wallet.json
+accounts.json
+accounts.example.json
+sessions/
+keys/
 KILL

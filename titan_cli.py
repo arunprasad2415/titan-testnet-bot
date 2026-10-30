@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Titan testnet CLI farmer.
 
-Run it, paste your EVM private key, answer six questions, it trades.
+Run it, paste your EVM private key, answer a few questions, it trades.
 
     python3 titan_cli.py
 
