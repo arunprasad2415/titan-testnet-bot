@@ -200,6 +200,11 @@ class TitanClient:
                 return e.code, {"raw": raw[:200].decode("utf-8", "ignore")}
 
     # ---------- public ----------
+    def alive(self):
+        """Cheap health probe through the same transport and proxy."""
+        st, _ = self.markets()
+        return st == 200
+
     def markets(self):
         return self._call("GET", "/v1/markets")
 

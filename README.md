@@ -23,7 +23,7 @@ the account.
 5. [Running it 24/7](#5-running-it-247)
 6. [Checking status](#6-checking-status)
 7. [Stopping it properly](#7-stopping-it-properly)
-8. [Several accounts at once](#8-several-accounts-at-once)
+8. [Several wallets, simply](#8-several-wallets-simply)
 9. [Proxies](#9-proxies)
 10. [How the money works (read this)](#10-how-the-money-works-read-this)
 11. [Behaviour randomisation](#11-behaviour-randomisation)
@@ -318,14 +318,31 @@ systemctl disable titan-farm    # do not start after a reboot
 
 ---
 
-## 8. Several accounts at once
+## 8. Several wallets, simply
+
+One command per wallet. No editing JSON by hand.
 
 ```bash
-python3 titan_multi.py --init      # writes accounts.example.json
-# edit it, one entry per account
-python3 titan_multi.py --config accounts.json
-python3 titan_multi.py --config accounts.json --only alice
-python3 titan_multi.py --config accounts.json --dry-run
+python3 titan_multi.py --add alice 0xPRIVATE_KEY_ALICE
+python3 titan_multi.py --add bob   0xPRIVATE_KEY_BOB --proxy socks5://user:pass@1.2.3.4:1080
+
+python3 titan_multi.py --list        # see them
+python3 titan_multi.py --config accounts.json    # run them all at once
+python3 titan_multi.py --remove bob  # drop one
+```
+
+That is the whole workflow. `--add` writes into `accounts.json` with mode 600, one
+entry per wallet, and running with `--config` starts every wallet in its own
+process with its own session.
+
+Every wallet needs its own browser step from section 3 first, with its own wallet
+address. If a wallet has no Titan account the worker stops with the instructions.
+
+Settings are shared by all wallets and can be overridden per wallet:
+
+```bash
+python3 titan_multi.py --add carol 0xKEY --proxy http://1.2.3.4:8080
+# then edit accounts.json if you want carol to trade a different size or market
 ```
 
 ```json
@@ -334,21 +351,20 @@ python3 titan_multi.py --config accounts.json --dry-run
                "sl": 0.9, "timeout": 90, "max_dd": 15, "cycles": 0,
                "stealth": true, "momentum": 0.01},
   "accounts": [
-    {"name": "alice", "privateKey": "0x...", "proxy": "http://user:pass@host:port"},
-    {"name": "bob",   "privateKey": "0x...", "size_usd": 80, "momentum": 0.02}
+    {"name": "alice", "privateKey": "0x..."},
+    {"name": "bob",   "privateKey": "0x...", "proxy": "socks5://user:pass@1.2.3.4:1080",
+     "size_usd": 80, "momentum": 0.02}
   ]
 }
 ```
 
-How it behaves:
+What you get:
 
-- each account gets `sessions/<name>.json`, mode 600, re-minted when under a day left
-- each account runs in its own process, so one crash does not kill the others
-- starts are staggered 0.4s apart, they should not open in lockstep
+- each wallet gets `sessions/<name>.json`, mode 600, re-minted when under a day left
+- each wallet runs in its own process, one crash does not stop the others
+- starts are staggered 0.4s apart, they do not open in lockstep
 - logs are prefixed `[alice]` and `[bob]`
-- `ctrl-c` or `touch KILL` stops every worker
-
-Each account needs its own browser step from section 3, with its own wallet.
+- `ctrl-c` or `touch KILL` stops every wallet
 
 ---
 
@@ -366,6 +382,26 @@ Add `"proxy"` to an account, or nothing to go direct.
 The transport is `curl_cffi` impersonating Chrome, so the TLS fingerprint matches a
 browser. Plain `requests` gets a Cloudflare 403 from this API, which is why it is
 not used.
+
+### If the proxy dies
+
+You get told, three times over:
+
+```
+at startup      refuses to start, prints PROXY DEAD, exits with code 3
+before a trade  pauses that wallet, warns, retries every 15s, gives up after 5 min
+holding a trade warns every 30s that it cannot manage the position
+status          ./status.sh shows the alert on line 3
+```
+
+```
+!! [alice] 04:58:12 WIB PROXY DEAD 1.2.3.4:1080 - trading paused, retrying
+!! [alice] 05:03:20 WIB proxy dead for 5 min, stopping this account
+!! [bob] stopped: proxy unreachable
+```
+
+The alert also lands in `/root/titan/PROXY_ALERT`, so `./status.sh` and `tail` both
+show it. The bot never trades blind through a proxy it cannot reach.
 
 ---
 

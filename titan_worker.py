@@ -50,6 +50,15 @@ def main():
                                                  impersonate=prof.impersonate)
 
     if client:
+        if proxy and not client.alive():
+            msg = (f"!! PROXY DEAD: {proxy.split('@')[-1]} - cannot reach testnet-api.titanx.cc. "
+                   f"Fix the proxy or remove it from accounts.json.")
+            print(msg, flush=True)
+            try:
+                open("/root/titan/PROXY_ALERT", "a").write(msg + "\n")
+            except Exception:
+                pass
+            sys.exit(3)
         ready, info = client.account_ready()
         if not ready:
             print("account not ready:", json.dumps(info)[:200], flush=True)

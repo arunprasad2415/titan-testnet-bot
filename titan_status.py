@@ -84,6 +84,10 @@ def render():
         f"points     {acc.get('points', '?')}   rank {acc.get('rank', '?')} of {acc.get('parties', '?')}",
         f"activity   {st.get('cycles', 0)} cycles, {st.get('fills', 0)} fills, {st.get('fees', 0)} USDC fees",
     ]
+    if os.path.exists("/root/titan/PROXY_ALERT"):
+        last = open("/root/titan/PROXY_ALERT").read().strip().splitlines()
+        if last:
+            lines.insert(2, "ALERT      " + last[-1][:100])
     for l in st.get("last", []):
         lines.append("  " + l)
     return "\n".join(lines)

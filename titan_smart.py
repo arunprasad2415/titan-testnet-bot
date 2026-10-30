@@ -77,6 +77,8 @@ class Smart:
         self.cur_size = a.size
         self.cur_tif = "ioc"
         self.client = client if client is not None else (None if a.dry_run else TitanClient(a.session))
+        self.proxy = getattr(a, "proxy", "") or ""
+        self.proxy_dead_since = 0
         self.specs = {}
         if self.client:
             st, res = self.client.markets()
@@ -200,6 +202,45 @@ class Smart:
             self.side = None
         return st in (200, 201)
 
+    def warn(self, msg):
+        import datetime
+        ts = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=7))).strftime("%H:%M:%S WIB")
+        line = f"!! [{getattr(self.a, 'name', 'account')}] {ts} {msg}"
+        print(line, flush=True)
+        try:
+            with open("/root/titan/PROXY_ALERT", "a") as f:
+                f.write(line + "\n")
+        except Exception:
+            pass
+
+    def proxy_alive(self):
+        """True when there is no proxy, or when the proxy answers."""
+        if not self.proxy or not self.client:
+            return True
+        for _ in range(2):
+            if self.client.alive():
+                return True
+            time.sleep(2)
+        return False
+
+    def guard_proxy(self, max_wait=300):
+        """Warn the moment the proxy dies, and refuse to trade blind."""
+        if self.proxy_alive():
+            if self.proxy_dead_since:
+                mins = (time.time() - self.proxy_dead_since) / 60
+                self.warn(f"proxy back after {mins:.0f} min, resuming")
+                self.proxy_dead_since = 0
+            return True
+        if not self.proxy_dead_since:
+            self.proxy_dead_since = time.time()
+            self.warn(f"PROXY DEAD {self.proxy.split('@')[-1]} - trading paused, retrying")
+        waited = time.time() - self.proxy_dead_since
+        if waited > max_wait:
+            self.warn(f"proxy dead for {waited/60:.0f} min, stopping this account")
+            return False
+        time.sleep(15)
+        return self.guard_proxy(max_wait)
+
     def flatten(self):
         """Leave no dust behind: any residual size is closed before a new entry."""
         if not self.client:
@@ -234,6 +275,9 @@ class Smart:
                 break
             self.cycles += 1
             print(f"cycle {self.cycles}: waiting for momentum")
+            if not self.guard_proxy():
+                print("  stopped: proxy unreachable")
+                return
             self.flatten()
             if getattr(self.a, "stealth", False):
                 self.a.momentum = max(0.002, random.gauss(self.a.momentum, self.a.momentum * 0.3))

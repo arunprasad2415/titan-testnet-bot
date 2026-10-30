@@ -94,7 +94,37 @@ def main():
     ap.add_argument("--init", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--only", help="run a single account by name")
+    ap.add_argument("--add", nargs=2, metavar=("NAME", "KEY"), help="add or replace a wallet")
+    ap.add_argument("--proxy", help="proxy for the wallet being added")
+    ap.add_argument("--remove", help="remove a wallet by name")
+    ap.add_argument("--list", action="store_true", help="show the wallets in the config")
     a = ap.parse_args()
+
+    cfg_path = os.path.join(HERE, "accounts.json")
+
+    if a.add or a.remove or a.list:
+        cfg = json.load(open(cfg_path)) if os.path.exists(cfg_path) else dict(EXAMPLE)
+        accs = cfg.setdefault("accounts", [])
+        if a.add:
+            name, key = a.add
+            entry = {"name": name, "privateKey": key}
+            if a.proxy:
+                entry["proxy"] = a.proxy
+            accs[:] = [x for x in accs if x.get("name") != name] + [entry]
+            json.dump(cfg, open(cfg_path, "w"), indent=1)
+            os.chmod(cfg_path, 0o600)
+            print(f"added {name}" + (f" via {a.proxy.split('@')[-1]}" if a.proxy else " (direct)"))
+        if a.remove:
+            accs[:] = [x for x in accs if x.get("name") != a.remove]
+            json.dump(cfg, open(cfg_path, "w"), indent=1)
+            os.chmod(cfg_path, 0o600)
+            print(f"removed {a.remove}")
+        if a.list or not (a.add or a.remove):
+            print(f"{len(accs)} wallet(s) in {cfg_path}:")
+            for x in accs:
+                px = (x.get("proxy") or "direct").split("@")[-1]
+                print(f"  {x.get('name'):10} {px}")
+        return
 
     if a.init:
         path = os.path.join(HERE, "accounts.example.json")
@@ -156,8 +186,19 @@ def main():
     signal.signal(signal.SIGINT, shutdown)
     signal.signal(signal.SIGTERM, shutdown)
 
+    reported = set()
     try:
         while not stop.is_set():
+            for n, p in procs:
+                rc = p.poll()
+                if rc is not None and n not in reported:
+                    reported.add(n)
+                    if rc == 3:
+                        print(f"!! [{n}] stopped: proxy unreachable", flush=True)
+                    elif rc != 0:
+                        print(f"!! [{n}] exited with code {rc}", flush=True)
+                    else:
+                        print(f"[{n}] finished", flush=True)
             alive = [n for n, p in procs if p.poll() is None]
             if not alive:
                 break
