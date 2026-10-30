@@ -339,6 +339,15 @@ systemctl disable titan-farm    # do not start after a reboot
 One command per wallet. No editing JSON by hand.
 
 ```bash
+./add.sh alice 0xPRIVATE_KEY_ALICE
+./add.sh bob   0xPRIVATE_KEY_BOB socks5://user:pass@1.2.3.4:1080
+./run.sh
+```
+
+`./add.sh` stores the wallet in `accounts.json` (mode 600) and `./run.sh` starts
+everything that is stored. The longer form does the same thing:
+
+```bash
 python3 titan_multi.py --add alice 0xPRIVATE_KEY_ALICE
 python3 titan_multi.py --add bob   0xPRIVATE_KEY_BOB --proxy socks5://user:pass@1.2.3.4:1080
 
@@ -684,6 +693,7 @@ sessions/           per-account session keys (gitignored, mode 600)
 ## Quick reference
 
 ```bash
+./add.sh alice 0xKEY                              # store a wallet, once
 ./run.sh                                          # every wallet, or the wizard if none
 ./run.sh --only bob                               # one wallet out of several
 ./run.sh --wizard                                 # force the single-wallet setup
