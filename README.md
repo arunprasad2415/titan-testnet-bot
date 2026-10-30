@@ -8,6 +8,10 @@ handle several accounts at once.
 No browser is needed while it runs. One browser step is needed **once**, to create
 the account.
 
+> **Your keys stay on your device.** Every private key you enter is saved locally,
+> in a mode 600 file on your own disk, and is never uploaded anywhere. See
+> [section 13](#13-security).
+
 > Create the account through this link:
 > **<https://testnet.titanx.cc/?ref=FBCF73398E>**
 > It is the same site, the `?ref=` part just credits the referral.
@@ -28,7 +32,7 @@ the account.
 10. [How the money works (read this)](#10-how-the-money-works-read-this)
 11. [Behaviour randomisation](#11-behaviour-randomisation)
 12. [Every error you will meet, and the fix](#12-every-error-you-will-meet-and-the-fix)
-13. [Security](#13-security)
+13. [Security and where your keys live](#13-security)
 14. [How the login actually works](#14-how-the-login-actually-works)
 15. [Files in this repo](#15-files-in-this-repo)
 
@@ -558,6 +562,36 @@ Run `TITAN_DEBUG=1 ./run.sh` and look at the canonical and headers it prints.
 ---
 
 ## 13. Security
+
+### Where your keys live (local only)
+
+Every private key you enter stays **on your own device**. Nothing is uploaded, there
+is no account, no cloud, no telemetry, no analytics call, no remote database.
+
+```
+wallet.json            single wallet key        mode 600, on your disk
+accounts.json          every wallet you added  mode 600, on your disk
+sessions/<name>.json   session keys            mode 600, on your disk
+```
+
+The bot signs every request locally with the key on that disk, then sends only the
+**signature**. The key itself never leaves the machine, not to Titan, not to a
+proxy, not anywhere.
+
+Because the keys live in files, they travel with the files. If you copy this folder
+to another machine, you copy the keys with it. If you hand the folder to someone
+else, you hand them the keys. `git` never sees them, `.gitignore` excludes
+`wallet.json`, `accounts.json`, `keys/` and `sessions/`, and the history was purged
+once already to keep it that way.
+
+If the disk is shared, back it up, or you do not trust the host:
+
+```bash
+./run.sh --no-save                                  # type the key, keep nothing
+rm -f wallet.json accounts.json                     # or delete them when done
+python3 titan_multi.py --remove alice               # drop one wallet's key
+chmod 600 wallet.json accounts.json                 # if permissions ever drift
+```
 
 - The private key is a **live key**. Anyone with it owns the account.
 - Store it at mode 600, never in a git repo. `accounts.json`, `wallet.json` and
