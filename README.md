@@ -344,26 +344,35 @@ Three lines. That is the whole thing.
 ./status.sh       # one line per wallet
 ```
 
-What `./add.sh` looks like:
+It first asks how many wallets you want, then walks you through them one at a time:
 
 ```
-Titan Auto Trade Bot - add a wallet
------------------------------------
-  wallet name (anything you like): alice
-  private key (hidden, stays on this machine): ********
-  proxy (press Enter for direct):
-  saved alice  0x46FF0054d657e9E63E7dd34b8771C78D0BF7c1C2  direct
-  add another wallet? [y/N]: y
-  wallet name (anything you like): bob
-  private key (hidden, stays on this machine): ********
-  proxy (press Enter for direct): socks5://user:pass@1.2.3.4:1080
-  saved bob  0x9a1c...  via 1.2.3.4:1080
-  add another wallet? [y/N]: n
+Titan Auto Trade Bot - add wallets
+----------------------------------
+  1 already stored
+
+  how many wallets do you want to add? [1]: 2
+
+  wallet 1 of 2
+    name: alice
+    private key (hidden, stays on this machine): ********
+    proxy (press Enter for direct):
+    saved alice  0x46FF0054d657e9E63E7dd34b8771C78D0BF7c1C2  direct
+
+  wallet 2 of 2
+    name: bob
+    private key (hidden, stays on this machine): ********
+    proxy (press Enter for direct): socks5://user:pass@1.2.3.4:1080
+    saved bob  0x9a1c...  via 1.2.3.4:1080
 
 2 wallet(s) stored in /root/titan/accounts.json (mode 600):
   alice        direct
   bob          1.2.3.4:1080
+
+start them all with:  ./run.sh
 ```
+
+A wrong key only asks that key again, the name is not repeated.
 
 If you prefer one line instead of questions:
 
