@@ -43,9 +43,11 @@ def main():
     d = json.loads(a.config)
     ns = NS(d, a.session)
     proxy = d.get("proxy") or None
-    prof = Profile(ns.name, index=int(d.get("index", 0)))
+    prof = Profile(ns.name, index=int(d.get("index", 0)),
+                   skip_chance=d.get("skip_chance"))
     print(f"profile {ns.name}: {prof.impersonate}, size x{prof.size_mult:.2f}, "
-          f"pace x{prof.pace_mult:.2f}, markets {prof.market_pool}", flush=True)
+          f"pace x{prof.pace_mult:.2f}, skip {prof.skip_chance*100:.0f}%, "
+          f"markets {prof.market_pool}", flush=True)
     client = None if ns.dry_run else TitanClient(a.session, proxy=proxy,
                                                  impersonate=prof.impersonate)
 

@@ -16,7 +16,7 @@ MARKETS = ["BTC-USDCX", "ETH-USDCX", "SOL-USDCX"]
 class Profile:
     """A stable personality per account name, plus per-cycle noise on top."""
 
-    def __init__(self, name, seed=None, index=None):
+    def __init__(self, name, seed=None, index=None, skip_chance=None):
         self.name = name
         rnd = random.Random(seed if seed is not None else name)
         # stable traits; index spreads the TLS fingerprints so two accounts never match
@@ -27,6 +27,8 @@ class Profile:
         self.hold_mult = rnd.uniform(0.7, 1.4)
         self.taker_bias = rnd.uniform(0.25, 0.75)     # chance of crossing (taker)
         self.skip_chance = rnd.uniform(0.05, 0.20)    # chance to pass on a signal
+        if skip_chance is not None:
+            self.skip_chance = float(skip_chance)
         self.market_pool = rnd.sample(MARKETS, rnd.choice([1, 1, 2, 3]))
         self.partial_bias = rnd.uniform(0.1, 0.4)     # chance to close in two pieces
         self.rnd = random.Random()

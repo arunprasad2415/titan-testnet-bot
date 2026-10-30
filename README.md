@@ -526,7 +526,7 @@ gate         momentum threshold re-rolled each cycle, +/-50%
 tif          maker or taker chosen per cycle from a per-account bias
 market       each account keeps a preferred pool, re-picked every cycle
 hold         TP/SL timeout scaled per cycle
-skip         sometimes the signal is passed on entirely
+skip         5-20% of signals passed on; set "skip_chance": 0 to take every one
 closing      occasionally closes in two pieces seconds apart
 pause        gaussian between cycles, plus a 20-120s idle now and then
 jitter       0.3-3.5s hesitation before every entry
