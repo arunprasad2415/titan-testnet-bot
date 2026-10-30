@@ -34,8 +34,8 @@ import urllib.request, urllib.error                   # noqa: E402
 SESSION = "/root/titan/session.json"
 WALLET = "/root/titan/wallet.json"
 BANNER = """
-  Titan testnet CLI farmer
-  ------------------------
+  Titan Auto Trade Bot
+  --------------------
   terminal only: session key minted from your wallet key,
   orders signed locally, no browser window.
 """
